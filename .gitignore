@@ -1,6 +1,8 @@
 Resource/
 jsondb/
+CanonicalMetadata/
 
 *.json
 
+__pycache__
 *.pyc

@@ -2,11 +2,12 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+import os
 
 from Tools.export_to_json import export_platform_to_json
 from Utils.helpers import discover_platforms
 from Tools.base import verify_closure
-
+from Tools.json_to_metadata import json_to_metadata
 
 
 def main():
@@ -35,7 +36,12 @@ def main():
     parser.add_argument(
         "--verify",
         action="store_true",
-        help="执行闭合性验证：parse → dump → parse 是否保持一致"
+        help="执行闭合性验证：parse → dump → parse 是否保持一致",
+    )
+    parser.add_argument(
+        "--from-json",
+        action="store_true",
+        help="从 jsondb 生成 / 覆盖 CanonicalMetadata/<key>/metadata.pegasus.txt",
     )
     args = parser.parse_args()
 
@@ -45,25 +51,72 @@ def main():
         print(f"[WARN] 在 {args.resource_root} 下没有找到任何 metadata.pegasus.txt")
         return
 
+    # 1) 仅列出平台
     if args.list:
         print("可用平台：")
         for key, (name, meta_path) in sorted(platforms.items()):
             print(f"  {key:15s} -> {name} ({meta_path})")
         return
 
+    # 2) 闭合性验证模式（不导出 json，不写回）
+    if args.verify:
+        print("[TEST] 正在验证闭合性 (parse → dump → parse)...")
+
+        if args.target == "all":
+            all_ok = True
+            for key, (name, meta_path) in sorted(platforms.items()):
+                print(f"[TEST] 平台 {key} ({name}) ...")
+                ok = verify_closure(meta_path)
+                if ok:
+                    print(f"[OK] {key} 闭合性成立")
+                else:
+                    print(f"[FAIL] {key} 闭合性失败")
+                    all_ok = False
+            if all_ok:
+                print("[OK] 所有平台闭合性成立，可安全 round-trip")
+            else:
+                print("[WARN] 部分平台闭合性失败，请检查上方日志")
+        else:
+            if args.target not in platforms:
+                print(f"[ERROR] 找不到平台 key: {args.target}")
+                print("可用平台（--list 查看详情）：")
+                for k in sorted(platforms.keys()):
+                    print("  ", k)
+                return
+            name, meta_path = platforms[args.target]
+            ok = verify_closure(meta_path)
+            if ok:
+                print(f"[OK] {args.target} ({name}) 闭合性成立")
+            else:
+                print(f"[FAIL] {args.target} ({name}) 闭合性失败")
+
+        return
+
+    # 3) 从 jsondb 写回 CanonicalMetadata
+    if args.from_json:
+        if args.target == "all":
+            for key, (name, _) in sorted(platforms.items()):
+                json_path = os.path.join(args.out_root, f"{key}.json")
+                print(f"[INFO] 从 {json_path} 恢复 {key} ...")
+                out_path = json_to_metadata(key, json_path, output_root="CanonicalMetadata")
+                print(f"       -> {out_path}")
+        else:
+            key = args.target
+            json_path = os.path.join(args.out_root, f"{key}.json")
+            if not os.path.exists(json_path):
+                print(f"[ERROR] 找不到 json: {json_path}")
+                return
+            print(f"[INFO] 从 {json_path} 恢复 {key} ...")
+            out_path = json_to_metadata(key, json_path, output_root="CanonicalMetadata")
+            print(f"[OK] -> {out_path}")
+        return
+
+    # 4) 默认行为：metadata -> jsondb 导出
     if args.target == "all":
         for key, (name, meta_path) in sorted(platforms.items()):
             print(f"[INFO] 导出 {key} ({name}) ...")
             out_path = export_platform_to_json(key, name, meta_path, out_root=args.out_root)
             print(f"       -> {out_path}")
-    if args.verify:
-        print("[TEST] 正在验证闭合性 (parse → dump → parse)...")
-        ok = verify_closure(meta_path)
-        if ok:
-            print("[OK] 闭合性成立，此平台可安全 round-trip")
-        else:
-            print("[FAIL] 闭合性失败，需要检查 parser/writer")
-        return
     else:
         if args.target not in platforms:
             print(f"[ERROR] 找不到平台 key: {args.target}")
