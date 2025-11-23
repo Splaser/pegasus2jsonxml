@@ -59,6 +59,25 @@ def _finalize_multiline_prop(
             if text.startswith("description:"):
                 text = text[len("description:"):].lstrip()
             target["description"] = text
+
+        elif key == "files":
+            # 多行 files:
+            #   path1
+            #   path2
+            # 注意：防止 "files:"/空行 混进来
+            lines: List[str] = []
+            for ln in buf:
+                s = ln.strip()
+                if not s:
+                    continue
+                # 万一哪天 buf 里真的混进 "files:"，这里直接跳过
+                if s.lower().startswith("files:"):
+                    continue
+                lines.append(s)
+
+            roms = target.setdefault("roms", [])
+            roms.extend(lines)
+
         else:
             target[key.replace("-", "_")] = text
 
@@ -135,16 +154,36 @@ def parse_pegasus_metadata(path: str) -> Tuple[Dict, List[Dict]]:
                     if current_game is not None:
                         # 统一 file / roms
                         roms = current_game.get("roms", [])
+
+                        # 先把意外的 "files:" 之类的占位符滤掉
+                        roms = [
+                            r for r in roms
+                            if isinstance(r, str)
+                            and r.strip()
+                            and not r.strip().lower().startswith("files:")
+                        ]
+
+                        # 如果之前误写了 file = "files:"，这里也顺手清理掉
+                        fval = current_game.get("file")
+                        if isinstance(fval, str) and fval.strip().lower().startswith("files:"):
+                            current_game.pop("file", None)
+
                         if not roms:
-                            # 兼容 file: 只有一个
+                            # 兼容只有 file: 的写法
                             fpath = current_game.get("file")
-                            if isinstance(fpath, str) and fpath:
+                            if isinstance(fpath, str) and fpath.strip():
                                 roms = [fpath]
+
                         current_game["roms"] = roms
-                        if roms and "file" not in current_game:
-                            current_game["file"] = roms[0]
+
+                        # 优先保证 file 和 roms[0] 对齐
+                        if roms:
+                            if "file" not in current_game or not current_game["file"]:
+                                current_game["file"] = roms[0]
+
                         _ensure_default_assets(current_game)
                         games.append(current_game)
+
 
 
                     current_game = {"game": value}
@@ -166,7 +205,13 @@ def parse_pegasus_metadata(path: str) -> Tuple[Dict, List[Dict]]:
                     continue
 
                 # 启动多行属性（launch, description, ignore-files, extension 等）
-                if key in ("launch", "description", "ignore-files", "extension"):
+                if key in ("launch", "description", "ignore-files", "extension", "files"):
+                    current_key = key
+                    if key == "files":
+                        # files: 是纯多行列表，不需要把首行带进去
+                        buf = []
+                        continue
+
 
                     # ---- 特殊处理 extension：支持单行写法 "extension: 7z, zip" ----
                     if key == "extension" and in_header:
@@ -208,6 +253,7 @@ def parse_pegasus_metadata(path: str) -> Tuple[Dict, List[Dict]]:
                             current_game["sort_by"] = value
                     else:
                         target[key.replace("-", "_")] = value
+
             else:
                 # 缩进行：多行属性的 continuation
                 if current_key is not None:
@@ -221,16 +267,32 @@ def parse_pegasus_metadata(path: str) -> Tuple[Dict, List[Dict]]:
     flush_multiline()
     if current_game is not None:
         roms = current_game.get("roms", [])
+
+        roms = [
+            r for r in roms
+            if isinstance(r, str)
+            and r.strip()
+            and not r.strip().lower().startswith("files:")
+        ]
+
+        fval = current_game.get("file")
+        if isinstance(fval, str) and fval.strip().lower().startswith("files:"):
+            current_game.pop("file", None)
+
         if not roms:
             fpath = current_game.get("file")
-            if isinstance(fpath, str) and fpath:
+            if isinstance(fpath, str) and fpath.strip():
                 roms = [fpath]
+
         current_game["roms"] = roms
-        if roms and "file" not in current_game:
-            current_game["file"] = roms[0]
-            
+
+        if roms:
+            if "file" not in current_game or not current_game["file"]:
+                current_game["file"] = roms[0]
+
         _ensure_default_assets(current_game)
         games.append(current_game)
+
 
     # header 里保证 default_sort_by 存在（哪怕 None）
     if "default_sort_by" not in header:
