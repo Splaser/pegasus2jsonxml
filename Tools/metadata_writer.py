@@ -33,12 +33,22 @@ def _write_header(f: TextIO, header: Dict[str, Any]) -> None:
 
     # extensions 支持多行
     exts = header.get("extensions") or []
-    if exts:
-        f.write('extension:\n')
-        for ext in exts:
-            f.write(f'  {ext}\n')
+    # 兜底：如果是逗号分隔的字符串，拆成 list
+    if isinstance(exts, str):
+        tmp = []
+        for part in exts.split(","):
+            p = part.strip()
+            if p:
+                tmp.append(p)
+        exts = tmp
 
-    f.write("\n")  # 头部和 games 之间空一行
+    if exts:
+        f.write("extension:\n")
+        for ext in exts:
+            f.write(f"  {ext}\n")
+
+
+        f.write("\n")  # 头部和 games 之间空一行
 
 
 def _write_game(f: TextIO, game: Dict[str, Any]) -> None:

@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 from typing import Dict, List, Tuple, Optional
 
@@ -28,17 +27,24 @@ def _finalize_multiline_prop(
 
     if is_header:
         if key == "launch":
-            target["launch_block"] = text
+            # 去掉开头多余的 "launch:" 前缀（兼容 "launch: xxx" 和 "launch:" 两种写法）
+            txt = text
+            if txt.startswith("launch:"):
+                txt = txt[len("launch:"):].lstrip()
+            target["launch_block"] = txt
         elif key == "sort-by":
             target["default_sort_by"] = text
         elif key == "ignore-files":
             # buf[0] 是 "ignore-files:"，要去掉
             items = [ln.strip() for ln in buf[1:] if ln.strip()]
             target["ignore_files"] = items
-        elif key == "extension":
-            # buf[0] 是 "extension: 7z" 或 "extension:"
+        elif key in ("extension", "extensions"):
+            # 多行写法：
+            # extension:
+            #   7z
+            #   zip
             lines = buf[1:] if len(buf) > 1 else []
-            exts = []
+            exts: List[str] = []
             for ln in lines:
                 for part in ln.split(","):
                     p = part.strip()
@@ -50,7 +56,10 @@ def _finalize_multiline_prop(
     else:
         # game block 内
         if key == "launch":
-            target["launch_block"] = text
+            txt = text
+            if txt.startswith("launch:"):
+                txt = txt[len("launch:"):].lstrip()
+            target["launch_block"] = txt
         elif key == "sort-by":
             target["sort_by"] = text
         elif key == "description":
@@ -205,7 +214,7 @@ def parse_pegasus_metadata(path: str) -> Tuple[Dict, List[Dict]]:
                     continue
 
                 # 启动多行属性（launch, description, ignore-files, extension 等）
-                if key in ("launch", "description", "ignore-files", "extension", "files"):
+                if key in ("launch", "description", "ignore-files", "extension", "extensions", "files"):
                     current_key = key
                     if key == "files":
                         # files: 是纯多行列表，不需要把首行带进去
@@ -214,7 +223,7 @@ def parse_pegasus_metadata(path: str) -> Tuple[Dict, List[Dict]]:
 
 
                     # ---- 特殊处理 extension：支持单行写法 "extension: 7z, zip" ----
-                    if key == "extension" and in_header:
+                    if key in ("extension", "extensions") and in_header:
                         if value:
                             # 单行：直接解析 value → ["7z", "zip"]
                             exts = []
@@ -224,8 +233,7 @@ def parse_pegasus_metadata(path: str) -> Tuple[Dict, List[Dict]]:
                                     exts.append(p)
                             header["extensions"] = exts
                             # 不进入多行模式了
-                            current_key = None
-                            buf = []
+                            continue
                         else:
                             # 真·多行 extension:
                             # extension:
