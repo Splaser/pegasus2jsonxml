@@ -1,167 +1,245 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Pegasus metadata 扫描 & 解析
+解析 Pegasus metadata.txt，抽象成 header + games 结构。
 
-暴露一个函数：
-    parse_pegasus_metadata(path: str) -> (header: dict, games: list[dict])
-
-header:
-    - collection
-    - ignore_files
-    - extensions
-    - default_sort_by
-    - launch        # 单行（launch: 后面）
-    - launch_block  # 整个缩进块（包括第一行 "launch:"）
-
-games 中每一项可能包含：
-    - game          # 名称
-    - file          # 主 rom
-    - roms          # list[str]
-    - sort_by
-    - developer
-    - description
-    - launch        # 首行（不太用）
-    - launch_override # 整个缩进块
-    - core_override   # 从 launch_override 里解析出的 core.so 文件名
+支持：
+- 头部字段：collection, sort-by, launch, ignore-files, extension 等
+- game block：game, file(多次), sort-by, developer, description, launch 等
 """
 
 from __future__ import annotations
+
 import os
-from typing import Tuple, Dict, Any, List
+import re
+from typing import Dict, List, Tuple, Optional
 
 
-def parse_pegasus_metadata(path: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-    header: Dict[str, Any] = {}
-    games: List[Dict[str, Any]] = []
+def _finalize_multiline_prop(
+    target: Dict,
+    key: Optional[str],
+    buf: List[str],
+    is_header: bool,
+) -> None:
+    """把正在累积的多行属性收尾写入 target."""
+    if not key:
+        return
+    text = "\n".join(buf).rstrip("\n")
 
-    current: Dict[str, Any] | None = None
-    in_global_launch = False
-    in_game_launch = False
-    in_files = False
-    scratch_lines: List[str] = []
+    if is_header:
+        if key == "launch":
+            target["launch_block"] = text
+        elif key == "sort-by":
+            target["default_sort_by"] = text
+        elif key == "ignore-files":
+            # 多行 ignore-files 列表
+            items = [ln.strip() for ln in buf if ln.strip()]
+            target["ignore_files"] = items
+        elif key == "extension":
+            # "7z, zip" -> ["7z", "zip"]
+            exts = []
+            for ln in buf:
+                for part in ln.split(","):
+                    p = part.strip()
+                    if p:
+                        exts.append(p)
+            target["extensions"] = exts
+        else:
+            target[key.replace("-", "_")] = text
+    else:
+        # game block 内
+        if key == "launch":
+            target["launch_block"] = text
+        elif key == "sort-by":
+            target["sort_by"] = text
+        elif key == "description":
+            target["description"] = text
+        else:
+            target[key.replace("-", "_")] = text
+
+
+def parse_pegasus_metadata(path: str) -> Tuple[Dict, List[Dict]]:
+    """
+    解析 Pegasus metadata 文件，返回 (header, games)。
+
+    header 大致结构：
+        {
+          "collection": "...",
+          "default_sort_by": "004",
+          "launch_block": "launch:\\n  ...",
+          "ignore_files": [...],
+          "extensions": [...]
+        }
+
+    games 元素结构：
+        {
+          "game": "标题",
+          "roms": ["xx.chd", ...],
+          "file": "xx.chd",    # roms[0] 方便前端用
+          "sort_by": "001",
+          "developer": "...",
+          "description": "...",
+          "launch_block": "launch:\\n  ...",   # 仅 per-game override 时存在
+        }
+    """
+    header: Dict = {}
+    games: List[Dict] = []
+
+    current_game: Optional[Dict] = None
+    in_header = True
+
+    # 当前正在累积的多行属性
+    current_key: Optional[str] = None
+    buf: List[str] = []
+
+    def flush_multiline():
+        nonlocal current_key, buf
+        if in_header:
+            _finalize_multiline_prop(header, current_key, buf, is_header=True)
+        else:
+            if current_game is not None:
+                _finalize_multiline_prop(current_game, current_key, buf, is_header=False)
+        current_key = None
+        buf = []
 
     with open(path, "r", encoding="utf-8") as f:
-        for raw in f:
-            line = raw.rstrip("\n")
-            stripped = line.strip()
+        for raw_line in f:
+            line = raw_line.rstrip("\n")
 
-            # -----------------------
-            # Global launch block
-            # -----------------------
-            if in_global_launch:
-                if line.startswith("  "):
-                    scratch_lines.append(line.rstrip())
+            # 跳过空行 / 纯注释行
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+
+            # 顶层 key（不缩进）
+            if not line.startswith(" "):
+                # 先收尾上一段多行属性
+                flush_multiline()
+
+                # 解析 "key: value"
+                if ":" not in line:
                     continue
-                else:
-                    # end global launch
-                    in_global_launch = False
-                    header["launch_block"] = "\n".join(scratch_lines)
 
-            # -----------------------
-            # game launch override
-            # -----------------------
-            if in_game_launch:
-                if line.startswith("  "):
-                    scratch_lines.append(line.rstrip())
+                key, _, value = line.partition(":")
+                key = key.strip()
+                value = value.strip()
+
+                # game: 开启新游戏块
+                if key == "game":
+                    in_header = False
+                    # 收尾上一 game
+                    if current_game is not None:
+                        # 统一 file / roms
+                        roms = current_game.get("roms", [])
+                        if not roms:
+                            # 兼容 file: 只有一个
+                            fpath = current_game.get("file")
+                            if isinstance(fpath, str) and fpath:
+                                roms = [fpath]
+                        current_game["roms"] = roms
+                        if roms and "file" not in current_game:
+                            current_game["file"] = roms[0]
+                        _ensure_default_assets(current_game)
+                        games.append(current_game)
+
+
+                    current_game = {"game": value}
+                    current_key = None
+                    buf = []
                     continue
+
+                # 其他 header/game 属性
+                # file: 特殊处理，多次出现 -> roms 列表
+                if key == "file":
+                    if in_header:
+                        # header 不应该出现 file
+                        continue
+                    if current_game is None:
+                        continue
+                    roms = current_game.setdefault("roms", [])
+                    roms.append(value)
+                    # 不把 "file" 作为多行字段继续累积
+                    continue
+
+                # 启动多行属性（launch, description, ignore-files, extension 等）
+                if key in ("launch", "description", "ignore-files", "extension"):
+                    current_key = key
+                    # 把当前行也记录进去（保持原始格式：launch: + 缩进行）
+                    if value:
+                        buf = [f"{key}: {value}"]
+                    else:
+                        buf = [f"{key}:"]
                 else:
-                    # end game launch
-                    in_game_launch = False
-                    if current is not None:
-                        current["launch_override"] = "\n".join(scratch_lines)
+                    # 单行属性，直接写入
+                    target = header if in_header else current_game
+                    if target is None:
+                        continue
+                    if key == "sort-by":
+                        if in_header:
+                            header["default_sort_by"] = value
+                        else:
+                            current_game["sort_by"] = value
+                    else:
+                        target[key.replace("-", "_")] = value
+            else:
+                # 缩进行：多行属性的 continuation
+                if current_key is not None:
+                    buf.append(line.strip("\n"))
+                else:
+                    # 没有 current_key，当作 description 的一部分可能比较合理
+                    # 但为了简单我们这里直接丢弃，或者你可以根据需要补逻辑
+                    pass
 
-            # 空行：结束 files 区
-            if stripped == "":
-                in_files = False
-                continue
+    # 文件结束后收尾
+    flush_multiline()
+    if current_game is not None:
+        roms = current_game.get("roms", [])
+        if not roms:
+            fpath = current_game.get("file")
+            if isinstance(fpath, str) and fpath:
+                roms = [fpath]
+        current_game["roms"] = roms
+        if roms and "file" not in current_game:
+            current_game["file"] = roms[0]
+            
+        _ensure_default_assets(current_game)
+        games.append(current_game)
 
-            # -----------------------
-            # new game block
-            # -----------------------
-            if line.startswith("game:"):
-                # 收尾前一个 game
-                if current is not None:
-                    if "roms" not in current and "file" in current:
-                        current["roms"] = [current["file"]]
-                    games.append(current)
-
-                name = line.split(":", 1)[1].strip()
-                current = {"game": name}
-                continue
-
-            # -----------------------
-            # header zone
-            # -----------------------
-            if current is None:
-                if line.startswith("collection:"):
-                    header["collection"] = line.split(":", 1)[1].strip()
-
-                elif line.startswith("ignore-files:"):
-                    header["ignore_files"] = []
-
-                elif "ignore_files" in header and line.startswith("  "):
-                    header["ignore_files"].append(stripped)
-
-                elif line.startswith("extension:"):
-                    header["extensions"] = [
-                        x.strip()
-                        for x in stripped.split(":", 1)[1].split(",")
-                    ]
-
-                elif line.startswith("sort-by:"):
-                    header["default_sort_by"] = line.split(":", 1)[1].strip()
-
-                elif line.startswith("launch:"):
-                    in_global_launch = True
-                    scratch_lines = [line.rstrip()]
-                    header["launch"] = line.split(":", 1)[1].strip()
-
-                continue
-
-            # -----------------------
-            # game zone
-            # -----------------------
-            if line.startswith("file:"):
-                val = line.split(":", 1)[1].strip()
-                current["file"] = val
-                current["roms"] = [val]
-
-            elif line.startswith("files:"):
-                in_files = True
-                current["roms"] = []
-
-            elif in_files and line.startswith("  "):
-                current["roms"].append(stripped)
-
-            elif line.startswith("sort-by:"):
-                current["sort_by"] = line.split(":", 1)[1].strip()
-
-            elif line.startswith("developer:"):
-                current["developer"] = line.split(":", 1)[1].strip()
-
-            elif line.startswith("description:"):
-                current["description"] = line.split(":", 1)[1].strip()
-
-            elif line.startswith("launch:"):
-                in_game_launch = True
-                scratch_lines = [line.rstrip()]
-                current["launch"] = line.split(":", 1)[1].strip()
-
-    # finalize last game
-    if current is not None:
-        if "roms" not in current and "file" in current:
-            current["roms"] = [current["file"]]
-        games.append(current)
-
-    # 额外处理：从 launch_override 里提取 core 覆盖
-    for g in games:
-        lo = g.get("launch_override")
-        if not lo:
-            continue
-        for ln in lo.split("\n"):
-            if "-e LIBRETRO" in ln:
-                core = ln.split()[-1]
-                g["core_override"] = os.path.basename(core)
+    # header 里保证 default_sort_by 存在（哪怕 None）
+    if "default_sort_by" not in header:
+        header["default_sort_by"] = None
 
     return header, games
+
+
+def extract_libretro_core(launch_block: str) -> Optional[str]:
+    """
+    从 launch block 里解析出 cores/xxx_libretro_android.so 这段，方便前端 override 用。
+    """
+    if not launch_block:
+        return None
+    m = re.search(r"/cores/([^/\s]+_libretro_android\.so)", launch_block)
+    if not m:
+        return None
+    return m.group(1)
+
+
+def _ensure_default_assets(game_dict):
+    """
+    确保每个 game 都有 assets 字段。
+    如果 metadata 里没写 assets，就按照约定：
+        media/{game_name}/boxfront.png / logo.png / video.mp4
+    自动补上。
+    """
+    # 已经有 assets，就不动
+    if "assets" in game_dict and game_dict["assets"]:
+        return
+
+    title = game_dict.get("game") or game_dict.get("title")
+    if not title:
+        return
+
+    game_dict["assets"] = {
+        "box_front": f"media/{title}/boxfront.png",
+        "logo":      f"media/{title}/logo.png",
+        "video":     f"media/{title}/video.mp4",
+    }
