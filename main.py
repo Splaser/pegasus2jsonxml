@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
 import argparse
 
 from Tools.export_to_json import export_platform_to_json
 from Utils.helpers import discover_platforms
-
+from Tools.base import verify_closure
 
 
 
@@ -33,7 +32,11 @@ def main():
         action="store_true",
         help="仅列出可用平台，不导出",
     )
-
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="执行闭合性验证：parse → dump → parse 是否保持一致"
+    )
     args = parser.parse_args()
 
     platforms = discover_platforms(args.resource_root)
@@ -53,6 +56,14 @@ def main():
             print(f"[INFO] 导出 {key} ({name}) ...")
             out_path = export_platform_to_json(key, name, meta_path, out_root=args.out_root)
             print(f"       -> {out_path}")
+    if args.verify:
+        print("[TEST] 正在验证闭合性 (parse → dump → parse)...")
+        ok = verify_closure(meta_path)
+        if ok:
+            print("[OK] 闭合性成立，此平台可安全 round-trip")
+        else:
+            print("[FAIL] 闭合性失败，需要检查 parser/writer")
+        return
     else:
         if args.target not in platforms:
             print(f"[ERROR] 找不到平台 key: {args.target}")
