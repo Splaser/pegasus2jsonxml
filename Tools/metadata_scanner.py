@@ -32,13 +32,14 @@ def _finalize_multiline_prop(
         elif key == "sort-by":
             target["default_sort_by"] = text
         elif key == "ignore-files":
-            # 多行 ignore-files 列表
-            items = [ln.strip() for ln in buf if ln.strip()]
+            # buf[0] 是 "ignore-files:"，要去掉
+            items = [ln.strip() for ln in buf[1:] if ln.strip()]
             target["ignore_files"] = items
         elif key == "extension":
-            # "7z, zip" -> ["7z", "zip"]
+            # buf[0] 是 "extension: 7z" 或 "extension:"
+            lines = buf[1:] if len(buf) > 1 else []
             exts = []
-            for ln in buf:
+            for ln in lines:
                 for part in ln.split(","):
                     p = part.strip()
                     if p:
@@ -53,6 +54,10 @@ def _finalize_multiline_prop(
         elif key == "sort-by":
             target["sort_by"] = text
         elif key == "description":
+            text = "\n".join(buf).rstrip("\n")
+            # 如果开头是 "description:" 就砍掉这一段
+            if text.startswith("description:"):
+                text = text[len("description:"):].lstrip()
             target["description"] = text
         else:
             target[key.replace("-", "_")] = text
@@ -162,12 +167,35 @@ def parse_pegasus_metadata(path: str) -> Tuple[Dict, List[Dict]]:
 
                 # 启动多行属性（launch, description, ignore-files, extension 等）
                 if key in ("launch", "description", "ignore-files", "extension"):
-                    current_key = key
-                    # 把当前行也记录进去（保持原始格式：launch: + 缩进行）
-                    if value:
-                        buf = [f"{key}: {value}"]
+
+                    # ---- 特殊处理 extension：支持单行写法 "extension: 7z, zip" ----
+                    if key == "extension" and in_header:
+                        if value:
+                            # 单行：直接解析 value → ["7z", "zip"]
+                            exts = []
+                            for part in value.split(","):
+                                p = part.strip()
+                                if p:
+                                    exts.append(p)
+                            header["extensions"] = exts
+                            # 不进入多行模式了
+                            current_key = None
+                            buf = []
+                        else:
+                            # 真·多行 extension:
+                            # extension:
+                            #   7z
+                            #   zip
+                            current_key = key
+                            buf = [f"{key}:"]
                     else:
-                        buf = [f"{key}:"]
+                        # 其他多行字段（launch / description / ignore-files）
+                        current_key = key
+                        if value:
+                            buf = [f"{key}: {value}"]
+                        else:
+                            buf = [f"{key}:"]
+
                 else:
                     # 单行属性，直接写入
                     target = header if in_header else current_game

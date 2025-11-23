@@ -34,6 +34,7 @@ def _build_game_json(game: Dict, header: Dict) -> Dict:
     if "assets" in game:
         data["assets"] = game["assets"]
 
+
     # 处理 per-game launch override
     game_launch = game.get("launch_block")
     default_launch = header.get("launch_block")
@@ -65,9 +66,11 @@ def export_platform_to_json(
 
     payload = {
         "platform": platform_name,
-        "collection": header.get("collection"),
+        "collection": header.get("collection") or platform_name,
         "default_sort_by": header.get("default_sort_by"),
         "launch_block": header.get("launch_block"),
+        "ignore_files": header.get("ignore_files", []),
+        "extensions": header.get("extensions", []),
         # 可以按需暴露更多 header 字段
         "games": [_build_game_json(g, header) for g in games],
     }
