@@ -5,7 +5,7 @@ import os
 import argparse
 
 from Tools.export_to_json import export_platform_to_json
-from Utils.helpers import slugify, discover_platforms
+from Utils.helpers import discover_platforms
 
 
 

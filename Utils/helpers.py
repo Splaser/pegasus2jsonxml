@@ -1,4 +1,15 @@
 import os
+import re
+
+def slugify_re(name: str) -> str:
+    s = (
+        name.replace("\\", "/")
+        .split("/")[-1]
+        .strip()
+        .lower()
+        .replace(" ", "_")
+    )
+    return re.sub(r"[^a-z0-9_]+", "_", s)
 
 
 def slugify(name: str) -> str:
