@@ -84,6 +84,16 @@ def export_platform_to_json(
 
     out_path = os.path.join(out_root, f"{key}.json")
 
+    # export_to_json.py 里：
+    ignore_files = header.get("ignore_files")
+    if ignore_files is None:
+        # 兼容老写法 ignore_file: xxx
+        single = header.get("ignore_file")
+        if isinstance(single, str) and single.strip():
+            ignore_files = [single.strip()]
+        else:
+            ignore_files = []
+
     payload = {
         "schema_version": 1,
         "platform": platform_name,
@@ -91,7 +101,7 @@ def export_platform_to_json(
         "assets_base": "media",  # 新增：约定所有媒体路径都在 media/ 下
         "default_sort_by": header.get("default_sort_by"),
         "launch_block": header.get("launch_block"),
-        "ignore_files": header.get("ignore_files", []),
+        "ignore_files": ignore_files,
         "extensions": header.get("extensions", []),
         # 可以按需暴露更多 header 字段
         "games": [_build_game_json(g, header, platform_name) for g in games],

@@ -16,7 +16,7 @@ from Converters.retroarch_exporter import export_retroarch
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Pegasus metadata -> jsondb exporter")
+    parser = argparse.ArgumentParser(description="Pegasus metadata / jsondb 工具")
     parser.add_argument(
         "target",
         nargs="?",
@@ -26,12 +26,12 @@ def main():
     parser.add_argument(
         "--resource-root",
         default="Resource",
-        help="metadata 根目录（默认 Resource）",
+        help="Pegasus metadata 根目录（默认 Resource）",
     )
     parser.add_argument(
         "--out-root",
         default="jsondb",
-        help="json 输出目录（默认 jsondb）",
+        help="jsondb 输出目录 / 读取目录（默认 jsondb）",
     )
     parser.add_argument(
         "--list",
@@ -43,35 +43,34 @@ def main():
         action="store_true",
         help="执行闭合性验证：parse → dump → parse 是否保持一致",
     )
+
+    # jsondb -> CanonicalMetadata（写回 Pegasus）
     parser.add_argument(
-        "--from-json",
+        "--export-pegasus",
         action="store_true",
-        help="从 jsondb 生成 / 覆盖 CanonicalMetadata/<key>/metadata.pegasus.txt",
+        help="从 jsondb 生成 Pegasus 前端所需的 metadata.pegasus.txt（写入 CanonicalMetadata）",
     )
 
+    # jsondb -> 其他前端
     parser.add_argument(
         "--export-daijisho",
         action="store_true",
-        help="导出 Daijisho database JSON"
+        help="从 jsondb 导出 Daijisho database JSON",
     )
-
     parser.add_argument(
         "--export-esde",
         action="store_true",
-        help="导出 ES-DE gamelist.xml + media 结构"
+        help="从 jsondb 导出 ES-DE gamelist.xml + media 结构",
     )
-
     parser.add_argument(
         "--export-ra",
         action="store_true",
-        help="导出 RetroArch per-game override 配置"
+        help="从 jsondb 导出 RetroArch 相关配置（例如 playlists / overrides）",
     )
-
 
     args = parser.parse_args()
 
     platforms = discover_platforms(args.resource_root)
-
     if not platforms:
         print(f"[WARN] 在 {args.resource_root} 下没有找到任何 metadata.pegasus.txt")
         return
@@ -116,19 +115,19 @@ def main():
                 print(f"[FAIL] {args.target} ({name}) 闭合性失败")
 
         return
-
-    # 3) 从 jsondb 写回 CanonicalMetadata
-    if args.from_json:
+    
+    # 3) jsondb -> CanonicalMetadata（写回 Pegasus）
+    if args.export_pegasus:
         if args.target == "all":
             for key, (name, _) in sorted(platforms.items()):
-                json_path = os.path.join(args.out_root, f"{key}.json")
+                json_path = Path(args.out_root) / f"{key}.json"
                 print(f"[INFO] 从 {json_path} 恢复 {key} ...")
                 out_path = json_to_metadata(key, json_path, output_root="CanonicalMetadata")
                 print(f"       -> {out_path}")
         else:
             key = args.target
-            json_path = os.path.join(args.out_root, f"{key}.json")
-            if not os.path.exists(json_path):
+            json_path = Path(args.out_root) / f"{key}.json"
+            if not json_path.exists():
                 print(f"[ERROR] 找不到 json: {json_path}")
                 return
             print(f"[INFO] 从 {json_path} 恢复 {key} ...")
@@ -136,10 +135,41 @@ def main():
             print(f"[OK] -> {out_path}")
         return
 
-    # 4) 默认行为：metadata -> jsondb 导出
+    # 4) jsondb -> Daijisho / ES-DE / RetroArch
+    if args.export_daijisho or args.export_esde or args.export_ra:
+        def do_exports_for_key(key: str):
+            json_path = Path(args.out_root) / f"{key}.json"
+            if not json_path.exists():
+                print(f"[WARN] 跳过 {key}，未找到 jsondb 文件：{json_path}")
+                return
+
+            if args.export_daijisho:
+                export_daijisho(key, json_path, Path("Export_Daijisho"))
+            if args.export_esde:
+                export_esde(key, json_path, Path("Export_ESDE"))
+            if args.export_ra:
+                export_retroarch(key, json_path, Path("Export_RetroArch"))
+
+        if args.target == "all":
+            for key, (name, _) in sorted(platforms.items()):
+                print(f"[INFO] 从 jsondb 导出 {key} ...")
+                do_exports_for_key(key)
+        else:
+            if args.target not in platforms:
+                print(f"[ERROR] 找不到平台 key: {args.target}")
+                print("可用平台（--list 查看详情）：")
+                for k in sorted(platforms.keys()):
+                    print("  ", k)
+                return
+            print(f"[INFO] 从 jsondb 导出 {args.target} ...")
+            do_exports_for_key(args.target)
+
+        return
+
+    # 5) 默认行为：Pegasus metadata -> jsondb
     if args.target == "all":
         for key, (name, meta_path) in sorted(platforms.items()):
-            print(f"[INFO] 导出 {key} ({name}) ...")
+            print(f"[INFO] 导出 {key} ({name}) 到 jsondb ...")
             out_path = export_platform_to_json(key, name, meta_path, out_root=args.out_root)
             print(f"       -> {out_path}")
     else:
@@ -151,40 +181,9 @@ def main():
             return
 
         name, meta_path = platforms[args.target]
-        print(f"[INFO] 导出 {args.target} ({name}) ...")
+        print(f"[INFO] 导出 {args.target} ({name}) 到 jsondb ...")
         out_path = export_platform_to_json(args.target, name, meta_path, out_root=args.out_root)
         print(f"[OK] -> {out_path}")
-    
-    # 5) Exporter：Daijisho / ES-DE / RA
-    if args.export_daijisho or args.export_esde or args.export_ra:
-        if args.target == "all":
-            for key, (name, _) in sorted(platforms.items()):
-                json_path = Path(args.out_root) / f"{key}.json"
-
-                if args.export_daijisho:
-                    export_daijisho(key, json_path, Path("Export_Daijisho"))
-
-                if args.export_esde:
-                    export_esde(key, json_path, Path("Export_ESDE"))
-
-                if args.export_ra:
-                    export_retroarch(key, json_path, Path("Export_RetroArch"))
-
-        else:
-            key = args.target
-            json_path = Path(args.out_root) / f"{key}.json"
-
-            if args.export_daijisho:
-                export_daijisho(key, json_path, Path("Export_Daijisho"))
-
-            if args.export_esde:
-                export_esde(key, json_path, Path("Export_ESDE"))
-
-            if args.export_ra:
-                export_retroarch(key, json_path, Path("Export_RetroArch"))
-
-        return
-
 
 
 if __name__ == "__main__":

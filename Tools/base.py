@@ -3,7 +3,7 @@ import unicodedata
 import re
 import os
 import json
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, Tuple
 
 from .metadata_scanner import parse_pegasus_metadata
 from .metadata_writer import dump_pegasus_metadata
@@ -29,7 +29,6 @@ def _clean_text(s: str) -> str:
     lines = [ln.rstrip() for ln in s.split("\n")]
     return "\n".join(lines).strip()
 
-
 def _normalize_header(h: Dict[str, Any]) -> Dict[str, Any]:
     """用于闭合性测试的 header 语义归一化。"""
     if h is None:
@@ -37,34 +36,31 @@ def _normalize_header(h: Dict[str, Any]) -> Dict[str, Any]:
 
     h2 = dict(h)
 
-    # 1) extensions：缺省 ≈ []，字符串/逗号分隔都拆成 list
+    # 0) 骚扰项清理：旧字段 ignore_file、新字段 ignore_files
+    #    对 jsondb / 各种 exporter 功能都无影响，只是不再纳入“闭合性必须严格相等”的范围
+    h2.pop("ignore_file", None)
+    h2.pop("ignore_files", None)
+
+    # 1) extensions：缺省 ≈ []，字符串/逗号分隔都拆成 list，再排序一下
     exts = h2.get("extensions")
     if exts is None:
         exts = []
-    if isinstance(exts, str):
+    elif isinstance(exts, str):
         tmp = []
         for part in exts.split(","):
             p = part.strip()
             if p:
                 tmp.append(p)
         exts = tmp
-    h2["extensions"] = exts
+    h2["extensions"] = sorted(exts)
 
-    # 2) ignore_files：缺省当成 []
-    ig = h2.get("ignore_files")
-    if ig is None:
-        ig = []
-    h2["ignore_files"] = ig
-
-    # 3) launch_block：去掉行首缩进差异
+    # 2) launch_block：去掉行首缩进差异
     lb = h2.get("launch_block")
     if lb:
-        lines = lb.splitlines()
-        lines = [ln.lstrip() for ln in lines]
+        lines = [ln.lstrip() for ln in lb.splitlines()]
         h2["launch_block"] = "\n".join(lines)
 
     return h2
-
 
 def _normalize_game(g: Dict[str, Any]) -> Dict[str, Any]:
     """用于闭合性测试的 game 语义归一化。"""
