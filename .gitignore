@@ -3,6 +3,7 @@ jsondb/
 CanonicalMetadata/
 
 *.json
+*.jsonl
 
 __pycache__
 *.pyc
