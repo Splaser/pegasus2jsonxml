@@ -6,22 +6,28 @@
 """
 
 from __future__ import annotations
-
+import hashlib
 import os
 import json
-from typing import Dict, List, Tuple
+
+from typing import Dict
 
 from Tools.metadata_scanner import parse_pegasus_metadata, extract_libretro_core
 
 
-def _build_game_json(game: Dict, header: Dict) -> Dict:
+def _build_game_json(game: Dict, header: Dict, platform: str) -> Dict:
     """把解析出的 game dict 转成最终 JSON schema."""
+
+    title = game.get("game")
+    file_name = game.get("file")
+
     data = {
-        "game": game.get("game"),
-        "file": game.get("file"),
+        "game": title,
+        "file": file_name,
         "roms": game.get("roms", []),
     }
 
+    # ---- sort_by / developer / description / assets ----
     if game.get("sort_by") is not None:
         data["sort_by"] = game["sort_by"]
 
@@ -34,19 +40,33 @@ def _build_game_json(game: Dict, header: Dict) -> Dict:
     if "assets" in game:
         data["assets"] = game["assets"]
 
+    # =====================================================
+    # 🔥 新增: canonical_name（短期先等于 game）
+    # =====================================================
+    data["canonical_name"] = title or ""
 
-    # 处理 per-game launch override
+    # =====================================================
+    # 🔥 新增: 游戏唯一 ID（platform + file 的 sha256 截断）
+    # =====================================================
+    sig_source = f"{platform}:{file_name}".encode("utf-8")
+    digest = hashlib.sha256(sig_source).hexdigest()
+    # 截为 16 字符，更优雅；你要 full hash 也可以另外输出
+    data["id"] = f"{platform}_{digest[:16]}"
+
+    # =====================================================
+    # 🔥 per-game launch override（保持你原有逻辑）
+    # =====================================================
     game_launch = game.get("launch_block")
     default_launch = header.get("launch_block")
 
     if game_launch and (not default_launch or game_launch.strip() != default_launch.strip()):
         data["launch_override"] = game_launch
+
         core = extract_libretro_core(game_launch)
         if core:
             data["core_override"] = core
 
     return data
-
 
 def export_platform_to_json(
     key: str,
@@ -68,13 +88,16 @@ def export_platform_to_json(
         "schema_version": 1,
         "platform": platform_name,
         "collection": header.get("collection") or platform_name,
+        "assets_base": "media",  # 新增：约定所有媒体路径都在 media/ 下
         "default_sort_by": header.get("default_sort_by"),
         "launch_block": header.get("launch_block"),
         "ignore_files": header.get("ignore_files", []),
         "extensions": header.get("extensions", []),
         # 可以按需暴露更多 header 字段
-        "games": [_build_game_json(g, header) for g in games],
+        "games": [_build_game_json(g, header, platform_name) for g in games],
+        
     }
+
 
     # ★ 新增 default_core
     default_launch = header.get("launch_block", "")
