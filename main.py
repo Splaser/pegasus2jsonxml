@@ -3,11 +3,16 @@
 
 import argparse
 import os
+from pathlib import Path
 
 from Tools.export_to_json import export_platform_to_json
 from Utils.helpers import discover_platforms
 from Tools.base import verify_closure
 from Tools.json_to_metadata import json_to_metadata
+
+from Converters.daijisho_exporter import export_daijisho
+from Converters.esde_exporter import export_esde
+from Converters.retroarch_exporter import export_retroarch
 
 
 def main():
@@ -43,6 +48,26 @@ def main():
         action="store_true",
         help="从 jsondb 生成 / 覆盖 CanonicalMetadata/<key>/metadata.pegasus.txt",
     )
+
+    parser.add_argument(
+        "--export-daijisho",
+        action="store_true",
+        help="导出 Daijisho database JSON"
+    )
+
+    parser.add_argument(
+        "--export-esde",
+        action="store_true",
+        help="导出 ES-DE gamelist.xml + media 结构"
+    )
+
+    parser.add_argument(
+        "--export-ra",
+        action="store_true",
+        help="导出 RetroArch per-game override 配置"
+    )
+
+
     args = parser.parse_args()
 
     platforms = discover_platforms(args.resource_root)
@@ -129,6 +154,37 @@ def main():
         print(f"[INFO] 导出 {args.target} ({name}) ...")
         out_path = export_platform_to_json(args.target, name, meta_path, out_root=args.out_root)
         print(f"[OK] -> {out_path}")
+    
+    # 5) Exporter：Daijisho / ES-DE / RA
+    if args.export_daijisho or args.export_esde or args.export_ra:
+        if args.target == "all":
+            for key, (name, _) in sorted(platforms.items()):
+                json_path = Path(args.out_root) / f"{key}.json"
+
+                if args.export_daijisho:
+                    export_daijisho(key, json_path, Path("Export_Daijisho"))
+
+                if args.export_esde:
+                    export_esde(key, json_path, Path("Export_ESDE"))
+
+                if args.export_ra:
+                    export_retroarch(key, json_path, Path("Export_RetroArch"))
+
+        else:
+            key = args.target
+            json_path = Path(args.out_root) / f"{key}.json"
+
+            if args.export_daijisho:
+                export_daijisho(key, json_path, Path("Export_Daijisho"))
+
+            if args.export_esde:
+                export_esde(key, json_path, Path("Export_ESDE"))
+
+            if args.export_ra:
+                export_retroarch(key, json_path, Path("Export_RetroArch"))
+
+        return
+
 
 
 if __name__ == "__main__":
