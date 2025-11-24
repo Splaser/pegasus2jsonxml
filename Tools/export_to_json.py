@@ -65,6 +65,7 @@ def export_platform_to_json(
     out_path = os.path.join(out_root, f"{key}.json")
 
     payload = {
+        "schema_version": 1,
         "platform": platform_name,
         "collection": header.get("collection") or platform_name,
         "default_sort_by": header.get("default_sort_by"),
@@ -75,6 +76,13 @@ def export_platform_to_json(
         "games": [_build_game_json(g, header) for g in games],
     }
 
+    # ★ 新增 default_core
+    default_launch = header.get("launch_block", "")
+    default_core = extract_libretro_core(default_launch) if default_launch else None
+
+    if default_core:
+        payload["default_core"] = default_core
+    
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 

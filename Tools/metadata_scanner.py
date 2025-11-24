@@ -232,7 +232,9 @@ def parse_pegasus_metadata(path: str) -> Tuple[Dict, List[Dict]]:
                                 if p:
                                     exts.append(p)
                             header["extensions"] = exts
-                            # 不进入多行模式了
+                            # ★ 关键：既然是单行解析完成，就不要再进入多行流程了
+                            current_key = None
+                            buf = []
                             continue
                         else:
                             # 真·多行 extension:
