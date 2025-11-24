@@ -16,13 +16,13 @@
 """
 
 import json
-import os
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 
 JSONDB_DIR = Path("jsondb")
+
 
 
 class JsonDbInspector(tk.Tk):
@@ -37,8 +37,19 @@ class JsonDbInspector(tk.Tk):
         self.games: list[dict] = []
         self.current_index: int | None = None
         self.dirty: bool = False
-
+        self._suspend_dirty = False
+        self._select_lock = False
         self._build_ui()
+
+    def _set_field(self, key, value):
+        widget = self.fields.get(key)
+        if widget is None:
+            return
+        if isinstance(widget, tk.StringVar):
+            widget.set(value if value is not None else "")
+        elif isinstance(widget, tk.Text):
+            widget.delete("1.0", tk.END)
+            widget.insert(tk.END, value if value is not None else "")
 
     # ---------------- UI 构建 ----------------
     def _build_ui(self):
@@ -104,7 +115,8 @@ class JsonDbInspector(tk.Tk):
                 self.fields[key] = txt
             else:
                 var = tk.StringVar()
-                entry = ttk.Entry(form, textvariable=var)
+                state = "readonly" if key == "id" else "normal"
+                entry = ttk.Entry(form, textvariable=var, state=state)
                 entry.grid(row=row, column=1, sticky=tk.EW, pady=4)
                 self.fields[key] = var
 
@@ -134,9 +146,11 @@ class JsonDbInspector(tk.Tk):
     # ---------------- 事件处理 ----------------
 
     def _mark_dirty(self):
-        if self.payload is not None:
-            self.dirty = True
-            self.status_var.set(f"{self.json_path} (已修改但未保存)")
+        if self._suspend_dirty or self.payload is None:
+            return
+        self.dirty = True
+        self.status_var.set(f"{self.json_path} (已修改但未保存)")
+
 
     def on_open(self):
         # 默认指向 jsondb 目录
@@ -169,70 +183,71 @@ class JsonDbInspector(tk.Tk):
         self.clear_form()
 
     def populate_tree(self):
-        self.tree.delete(*self.tree.get_children())
+        self.tree.unbind("<<TreeviewSelect>>")
 
+        self.tree.delete(*self.tree.get_children())
         for idx, g in enumerate(self.games):
-            game_id = g.get("id", "")
-            title = g.get("game", "")
-            file_name = g.get("file", "")
-            sort_by = g.get("sort_by", "")
-            self.tree.insert("", tk.END, iid=str(idx), values=(game_id, title, file_name, sort_by))
+            self.tree.insert("", "end", iid=str(idx),
+                             values=(g.get("id",""), g.get("game",""), g.get("file",""), g.get("sort_by","")))
+
+        self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
     def clear_form(self):
-        self.current_index = None
-        for key, widget in self.fields.items():
-            if isinstance(widget, tk.StringVar):
-                widget.set("")
-            elif isinstance(widget, tk.Text):
-                widget.delete("1.0", tk.END)
+        self._suspend_dirty = True
+        try:
+            self.current_index = None
+            for key, widget in self.fields.items():
+                if isinstance(widget, tk.StringVar):
+                    widget.set("")
+                elif isinstance(widget, tk.Text):
+                    widget.delete("1.0", tk.END)
+        finally:
+            self._suspend_dirty = False
 
     def on_tree_select(self, event):
-        selection = self.tree.selection()
-        if not selection:
+        if self._select_lock:
             return
 
-        idx_str = selection[0]
+        self._select_lock = True
         try:
+            selection = self.tree.selection()
+            if not selection:
+                return
+
+            idx_str = selection[0]
+
             idx = int(idx_str)
-        except ValueError:
-            return
+            if idx < 0 or idx >= len(self.games):
+                return
 
-        if idx < 0 or idx >= len(self.games):
-            return
+            self.current_index = idx
+            game = self.games[idx]
+            self.load_game_to_form(game)
 
-        # 切换前先应用当前编辑（避免切换时丢修改）
-        self.on_apply_current()
+        finally:
+            self._select_lock = False
 
-        self.current_index = idx
-        game = self.games[idx]
-        self.load_game_to_form(game)
 
     def load_game_to_form(self, game: dict):
-        def set_field(key, value):
-            widget = self.fields.get(key)
-            if widget is None:
-                return
-            if isinstance(widget, tk.StringVar):
-                widget.set(value if value is not None else "")
-            elif isinstance(widget, tk.Text):
-                widget.delete("1.0", tk.END)
-                widget.insert(tk.END, value if value is not None else "")
+        self._suspend_dirty = True
+        try:
+            self._set_field("id", game.get("id", ""))
+            self._set_field("game", game.get("game", ""))
+            self._set_field("canonical_name", game.get("canonical_name", game.get("game", "")))
+            self._set_field("file", game.get("file", ""))
 
-        set_field("id", game.get("id", ""))
-        set_field("game", game.get("game", ""))
-        set_field("canonical_name", game.get("canonical_name", game.get("game", "")))
-        set_field("file", game.get("file", ""))
+            roms = game.get("roms")
+            if isinstance(roms, list):
+                roms_text = ", ".join(str(r) for r in roms)
+            else:
+                roms_text = ""
+            self._set_field("roms", roms_text)
 
-        roms = game.get("roms")
-        if isinstance(roms, list):
-            roms_text = ", ".join(str(r) for r in roms)
-        else:
-            roms_text = ""
-        set_field("roms", roms_text)
-
-        set_field("sort_by", game.get("sort_by", ""))
-        set_field("developer", game.get("developer", ""))
-        set_field("description", game.get("description", ""))
+            self._set_field("sort_by", game.get("sort_by", ""))
+            self._set_field("developer", game.get("developer", ""))
+            self._set_field("description", game.get("description", ""))
+        finally:
+            self._suspend_dirty = False
 
     def on_apply_current(self):
         """将右侧表单的修改写回 self.games[current_index]，不写文件。"""
@@ -251,9 +266,10 @@ class JsonDbInspector(tk.Tk):
                 return widget.get("1.0", tk.END).strip()
             return ""
 
-        game_id = get_text_field("id")
-        if game_id:
-            game["id"] = game_id
+        # game_id = get_text_field("id")
+
+        # if game_id:
+        #     game["id"] = game_id
 
         game["game"] = get_text_field("game") or game.get("game", "")
         game["canonical_name"] = get_text_field("canonical_name") or game["game"]
@@ -267,7 +283,10 @@ class JsonDbInspector(tk.Tk):
         game["roms"] = roms_list
 
         sort_by = get_text_field("sort_by")
-        game["sort_by"] = sort_by if sort_by else None
+        if sort_by:
+            game["sort_by"] = sort_by
+        else:
+            game.pop("sort_by", None)
 
         developer = get_text_field("developer")
         if developer:
@@ -283,8 +302,10 @@ class JsonDbInspector(tk.Tk):
 
         # 更新列表显示
         self.populate_tree()
-        self.tree.selection_set(str(self.current_index))
-        self.tree.see(str(self.current_index))
+        if 0 <= self.current_index < len(self.games):
+            self.tree.selection_set(str(self.current_index))
+            self.tree.see(str(self.current_index))
+
 
     def on_add_game(self):
         # 先应用当前编辑
