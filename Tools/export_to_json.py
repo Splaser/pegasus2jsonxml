@@ -74,24 +74,31 @@ def _build_game_json(
         if core:
             data["core_override"] = core
 
+    rom_hashes = []
+    for rom_path in game.get("roms", []):
+        full_path = Path(rom_root) / rom_path
+        if full_path.is_file():
+            size, sha256_full, md5_header = hasher.hash_rom(full_path)
+            rom_hashes.append({
+                "rom_rel": rom_path,
+                "exists": True,
+                "size": size,
+                "sha256_full": sha256_full,
+                "md5_header": md5_header,
+                "header_bytes": HEADER_BYTES,
+            })
+        else:
+            rom_hashes.append({
+                "rom_rel": rom_path,
+                "exists": False,
+                "size": None,
+                "sha256_full": None,
+                "md5_header": None,
+                "header_bytes": HEADER_BYTES,
+            })
 
-    # 新增：如果 rom_root 提供，则扫描
-    if rom_root and hasher is not None:
-        rom_hashes = []
-        for rom_path in game.get("roms", []):
-            full_path = Path(rom_root) / rom_path
-            if full_path.is_file():
-                size, sha256_full, md5_header = hasher.hash_rom(full_path)
-                rom_hashes.append({
-                    "rom_rel": rom_path,
-                    "size": size,
-                    "sha256_full": sha256_full,
-                    "md5_header": md5_header,
-                    "header_bytes": HEADER_BYTES,
-                })
-
-        if rom_hashes:
-            data["rom_hashes"] = rom_hashes
+    if rom_hashes:
+        data["rom_hashes"] = rom_hashes
             
     return data
 
