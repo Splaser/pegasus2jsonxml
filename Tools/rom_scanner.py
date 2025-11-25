@@ -21,18 +21,54 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 
-def sha256_of_file(path: Path, chunk_size: int = 8192) -> str:
-    """计算单个文件的 sha256 摘要."""
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(chunk_size), b""):
-            if not chunk:
-                break
-            h.update(chunk)
-    return h.hexdigest()
+HEADER_BYTES = 65536
+
+class RomHasher:
+    """
+    统一的 ROM Hash 工具：
+      - 一个实例可复用多次计算（减少 hashlib init 开销）
+      - 单次 read 完成 size / sha256_full / md5_header
+    """
+
+    def __init__(self, header_bytes: int = HEADER_BYTES):
+        self.header_bytes = header_bytes
+        self.sha_factory = hashlib.sha256   # 缓存构造函数
+        self.md5_factory = hashlib.md5      # 缓存构造函数
+
+    def hash_rom(self, path: Path) -> Tuple[int, str, Optional[str]]:
+        """
+        返回: (size, sha256_full, md5_header)
+        """
+        sha = self.sha_factory()
+        md5 = self.md5_factory()
+
+        size = 0
+        remaining = self.header_bytes
+
+        with path.open("rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                if not chunk:
+                    break
+
+                size += len(chunk)
+                sha.update(chunk)
+
+                # 前 header_bytes bytes 给 md5_header 用
+                if remaining > 0:
+                    if len(chunk) <= remaining:
+                        md5.update(chunk)
+                        remaining -= len(chunk)
+                    else:
+                        md5.update(chunk[:remaining])
+                        remaining = 0
+
+        sha256_full = sha.hexdigest()
+        md5_header = md5.hexdigest() if self.header_bytes > 0 else None
+        return size, sha256_full, md5_header
+
 
 
 def scan_roms_for_platform(
@@ -50,6 +86,8 @@ def scan_roms_for_platform(
     """
     with json_path.open("r", encoding="utf-8") as f:
         payload = json.load(f)
+
+    hasher = RomHasher(header_bytes=HEADER_BYTES)
 
     games: List[Dict[str, Any]] = payload.get("games", [])
 
@@ -85,12 +123,17 @@ def scan_roms_for_platform(
                 "rom_path": str(full_path),
                 "exists": full_path.is_file(),
                 "size": None,
-                "sha256": None,
+                "sha256_full": None,
+                "md5_header": None,
+                "header_bytes": HEADER_BYTES,
             }
 
+
             if full_path.is_file():
-                entry["size"] = full_path.stat().st_size
-                entry["sha256"] = sha256_of_file(full_path)
+                size, sha256_full, md5_header = hasher.hash_rom(full_path)
+                entry["size"] = size
+                entry["sha256_full"] = sha256_full
+                entry["md5_header"] = md5_header
 
             results["roms"].append(entry)
 
