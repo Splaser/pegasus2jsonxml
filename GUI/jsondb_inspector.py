@@ -7,7 +7,10 @@
 功能：
 - 打开 jsondb/<platform>.json
 - 左侧列表查看 games 列表
-- 右侧编辑常用字段（game / canonical_name / file / roms / sort_by / developer / description）
+- 右侧：
+  - 基本字段编辑（game / canonical_name / file / roms / sort_by / developer / description）
+  - ROM Hashes 只读表格（rom_hashes）
+  - Raw JSON 全字段只读视图
 - 新增 / 删除 / 保存
 
 注意：
@@ -20,9 +23,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-
 JSONDB_DIR = Path("jsondb")
-
 
 
 class JsonDbInspector(tk.Tk):
@@ -30,7 +31,7 @@ class JsonDbInspector(tk.Tk):
         super().__init__()
 
         self.title("jsondb Inspector")
-        self.geometry("1000x600")
+        self.geometry("1200x700")
 
         self.json_path: Path | None = None
         self.payload: dict | None = None
@@ -39,6 +40,12 @@ class JsonDbInspector(tk.Tk):
         self.dirty: bool = False
         self._suspend_dirty = False
         self._select_lock = False
+
+        # 右侧额外视图
+        self.fields: dict = {}
+        self.hash_tree: ttk.Treeview | None = None
+        self.raw_text: tk.Text | None = None
+
         self._build_ui()
 
     def _set_field(self, key, value):
@@ -86,8 +93,8 @@ class JsonDbInspector(tk.Tk):
         self.tree.heading("sort_by", text="排序")
 
         self.tree.column("id", width=150)
-        self.tree.column("game", width=220)
-        self.tree.column("file", width=220)
+        self.tree.column("game", width=260)
+        self.tree.column("file", width=260)
         self.tree.column("sort_by", width=80, anchor=tk.CENTER)
 
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -98,26 +105,33 @@ class JsonDbInspector(tk.Tk):
 
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
-        # 右侧：编辑表单
-        right_frame = ttk.Frame(main_pane, padding=8)
-        main_pane.add(right_frame, weight=1)
+        # 右侧：用 Notebook 分三块
+        right_frame = ttk.Frame(main_pane)
+        main_pane.add(right_frame, weight=2)
 
-        form = ttk.Frame(right_frame)
+        notebook = ttk.Notebook(right_frame)
+        notebook.pack(fill=tk.BOTH, expand=True)
+
+        # Tab 1: 基本信息表单
+        form_frame = ttk.Frame(notebook, padding=8)
+        notebook.add(form_frame, text="基本信息")
+
+        form = ttk.Frame(form_frame)
         form.pack(fill=tk.BOTH, expand=True)
 
         self.fields = {}
 
         def add_field(label_text, key, row, multiline=False):
-            ttk.Label(form, text=label_text).grid(row=row, column=0, sticky=tk.W, pady=4)
+            ttk.Label(form, text=label_text).grid(row=row, column=0, sticky=tk.W, pady=4, padx=4)
             if multiline:
                 txt = tk.Text(form, height=5, width=40, wrap=tk.WORD)
-                txt.grid(row=row, column=1, sticky=tk.EW, pady=4)
+                txt.grid(row=row, column=1, sticky=tk.EW, pady=4, padx=4)
                 self.fields[key] = txt
             else:
                 var = tk.StringVar()
                 state = "readonly" if key == "id" else "normal"
                 entry = ttk.Entry(form, textvariable=var, state=state)
-                entry.grid(row=row, column=1, sticky=tk.EW, pady=4)
+                entry.grid(row=row, column=1, sticky=tk.EW, pady=4, padx=4)
                 self.fields[key] = var
 
         form.columnconfigure(1, weight=1)
@@ -138,10 +152,53 @@ class JsonDbInspector(tk.Tk):
             elif isinstance(widget, tk.Text):
                 widget.bind("<Key>", lambda event: self._mark_dirty())
 
-        # 保存当前 game 的按钮
-        ttk.Button(right_frame, text="保存当前游戏修改到内存", command=self.on_apply_current).pack(
-            side=tk.BOTTOM, anchor=tk.E, pady=4
+        ttk.Button(
+            form_frame,
+            text="保存当前游戏修改到内存",
+            command=self.on_apply_current
+        ).pack(side=tk.BOTTOM, anchor=tk.E, pady=4, padx=8)
+
+        # Tab 2: ROM Hashes 只读表格
+        hash_frame = ttk.Frame(notebook, padding=8)
+        notebook.add(hash_frame, text="ROM Hashes")
+
+        hash_columns = ("rom_rel", "exists", "size", "md5_header", "sha256_full")
+        self.hash_tree = ttk.Treeview(
+            hash_frame,
+            columns=hash_columns,
+            show="headings",
+            selectmode="browse",
         )
+        self.hash_tree.heading("rom_rel", text="rom_rel")
+        self.hash_tree.heading("exists", text="存在")
+        self.hash_tree.heading("size", text="大小")
+        self.hash_tree.heading("md5_header", text="md5_header")
+        self.hash_tree.heading("sha256_full", text="sha256_full")
+
+        self.hash_tree.column("rom_rel", width=260)
+        self.hash_tree.column("exists", width=60, anchor=tk.CENTER)
+        self.hash_tree.column("size", width=100, anchor=tk.E)
+        self.hash_tree.column("md5_header", width=160)
+        self.hash_tree.column("sha256_full", width=260)
+
+        self.hash_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        hash_scrollbar = ttk.Scrollbar(hash_frame, orient=tk.VERTICAL, command=self.hash_tree.yview)
+        self.hash_tree.configure(yscrollcommand=hash_scrollbar.set)
+        hash_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Tab 3: Raw JSON 全字段只读
+        raw_frame = ttk.Frame(notebook, padding=8)
+        notebook.add(raw_frame, text="Raw JSON")
+
+        self.raw_text = tk.Text(raw_frame, wrap=tk.NONE)
+        self.raw_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        raw_scroll_y = ttk.Scrollbar(raw_frame, orient=tk.VERTICAL, command=self.raw_text.yview)
+        raw_scroll_x = ttk.Scrollbar(raw_frame, orient=tk.HORIZONTAL, command=self.raw_text.xview)
+        self.raw_text.configure(yscrollcommand=raw_scroll_y.set, xscrollcommand=raw_scroll_x.set)
+        raw_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        raw_scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
 
     # ---------------- 事件处理 ----------------
 
@@ -150,7 +207,6 @@ class JsonDbInspector(tk.Tk):
             return
         self.dirty = True
         self.status_var.set(f"{self.json_path} (已修改但未保存)")
-
 
     def on_open(self):
         # 默认指向 jsondb 目录
@@ -187,8 +243,12 @@ class JsonDbInspector(tk.Tk):
 
         self.tree.delete(*self.tree.get_children())
         for idx, g in enumerate(self.games):
-            self.tree.insert("", "end", iid=str(idx),
-                             values=(g.get("id",""), g.get("game",""), g.get("file",""), g.get("sort_by","")))
+            self.tree.insert(
+                "",
+                "end",
+                iid=str(idx),
+                values=(g.get("id", ""), g.get("game", ""), g.get("file", ""), g.get("sort_by", "")),
+            )
 
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
@@ -201,6 +261,11 @@ class JsonDbInspector(tk.Tk):
                     widget.set("")
                 elif isinstance(widget, tk.Text):
                     widget.delete("1.0", tk.END)
+            # 清空 hash / raw 视图
+            if self.hash_tree is not None:
+                self.hash_tree.delete(*self.hash_tree.get_children())
+            if self.raw_text is not None:
+                self.raw_text.delete("1.0", tk.END)
         finally:
             self._suspend_dirty = False
 
@@ -215,7 +280,6 @@ class JsonDbInspector(tk.Tk):
                 return
 
             idx_str = selection[0]
-
             idx = int(idx_str)
             if idx < 0 or idx >= len(self.games):
                 return
@@ -223,10 +287,47 @@ class JsonDbInspector(tk.Tk):
             self.current_index = idx
             game = self.games[idx]
             self.load_game_to_form(game)
-
         finally:
             self._select_lock = False
 
+    def _update_hash_view(self, game: dict):
+        if self.hash_tree is None:
+            return
+        self.hash_tree.delete(*self.hash_tree.get_children())
+
+        rom_hashes = game.get("rom_hashes") or []
+        if not isinstance(rom_hashes, list):
+            return
+
+        for idx, h in enumerate(rom_hashes):
+            rom_rel = h.get("rom_rel", "")
+            exists = h.get("exists", False)
+            size = h.get("size", "")
+            md5_header = h.get("md5_header", "")
+            sha256_full = h.get("sha256_full", "")
+
+            self.hash_tree.insert(
+                "",
+                "end",
+                iid=str(idx),
+                values=(
+                    rom_rel,
+                    "✓" if exists else "",
+                    size,
+                    md5_header,
+                    sha256_full,
+                ),
+            )
+
+    def _update_raw_json(self, game: dict):
+        if self.raw_text is None:
+            return
+        self.raw_text.delete("1.0", tk.END)
+        try:
+            raw = json.dumps(game, ensure_ascii=False, indent=2)
+        except Exception as e:
+            raw = f"<< JSON 序列化失败: {e} >>"
+        self.raw_text.insert(tk.END, raw)
 
     def load_game_to_form(self, game: dict):
         self._suspend_dirty = True
@@ -246,6 +347,10 @@ class JsonDbInspector(tk.Tk):
             self._set_field("sort_by", game.get("sort_by", ""))
             self._set_field("developer", game.get("developer", ""))
             self._set_field("description", game.get("description", ""))
+
+            # 更新 ROM Hashes & Raw JSON 视图
+            self._update_hash_view(game)
+            self._update_raw_json(game)
         finally:
             self._suspend_dirty = False
 
@@ -265,15 +370,19 @@ class JsonDbInspector(tk.Tk):
             elif isinstance(widget, tk.Text):
                 return widget.get("1.0", tk.END).strip()
             return ""
-
-        # game_id = get_text_field("id")
-
-        # if game_id:
-        #     game["id"] = game_id
-
-        game["game"] = get_text_field("game") or game.get("game", "")
+        
+        game_name = get_text_field("game") or game.get("game", "")
+        game["game"] = game_name
         game["canonical_name"] = get_text_field("canonical_name") or game["game"]
         game["file"] = get_text_field("file") or game.get("file", "")
+
+        # 确保 assets 存在
+        if "assets" not in game or not isinstance(game["assets"], dict):
+            game["assets"] = {}
+
+        game["assets"]["box_front"] = f"media/{game_name}/boxfront.png"
+        game["assets"]["logo"] = f"media/{game_name}/logo.png"
+        game["assets"]["video"] = f"media/{game_name}/video.mp4"
 
         roms_text = get_text_field("roms")
         if roms_text:
@@ -300,12 +409,15 @@ class JsonDbInspector(tk.Tk):
         elif "description" in game:
             game.pop("description", None)
 
-        # 更新列表显示
+        # 更新列表显示（左侧）
         self.populate_tree()
         if 0 <= self.current_index < len(self.games):
             self.tree.selection_set(str(self.current_index))
             self.tree.see(str(self.current_index))
 
+        # 同步更新 Raw JSON / hashes 视图（因为 game 已变）
+        self._update_hash_view(game)
+        self._update_raw_json(game)
 
     def on_add_game(self):
         # 先应用当前编辑
@@ -317,6 +429,11 @@ class JsonDbInspector(tk.Tk):
             "canonical_name": "新游戏",
             "file": "",
             "roms": [],
+            "assets": {
+                "box_front": "media/新游戏/boxfront.png",
+                "logo": "media/新游戏/logo.png",
+                "video": "media/新游戏/video.mp4",
+            }
         }
         self.games.append(new_game)
         self.populate_tree()
