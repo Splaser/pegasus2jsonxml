@@ -9,13 +9,21 @@ from __future__ import annotations
 import hashlib
 import os
 import json
+from pathlib import Path 
 
-from typing import Dict
+from typing import Dict, Optional
 
-from Tools.metadata_scanner import parse_pegasus_metadata, extract_libretro_core
+from .metadata_scanner import parse_pegasus_metadata, extract_libretro_core
+from .rom_scanner import HEADER_BYTES, RomHasher
 
 
-def _build_game_json(game: Dict, header: Dict, platform: str) -> Dict:
+def _build_game_json(
+    game: Dict,
+    header: Dict,
+    platform: str,
+    rom_root: Optional[str] = None,
+    hasher: Optional[RomHasher] = None,
+) -> Dict:
     """把解析出的 game dict 转成最终 JSON schema."""
 
     title = game.get("game")
@@ -66,6 +74,25 @@ def _build_game_json(game: Dict, header: Dict, platform: str) -> Dict:
         if core:
             data["core_override"] = core
 
+
+    # 新增：如果 rom_root 提供，则扫描
+    if rom_root and hasher is not None:
+        rom_hashes = []
+        for rom_path in game.get("roms", []):
+            full_path = Path(rom_root) / rom_path
+            if full_path.is_file():
+                size, sha256_full, md5_header = hasher.hash_rom(full_path)
+                rom_hashes.append({
+                    "rom_rel": rom_path,
+                    "size": size,
+                    "sha256_full": sha256_full,
+                    "md5_header": md5_header,
+                    "header_bytes": HEADER_BYTES,
+                })
+
+        if rom_hashes:
+            data["rom_hashes"] = rom_hashes
+            
     return data
 
 def export_platform_to_json(
@@ -73,12 +100,14 @@ def export_platform_to_json(
     platform_name: str,
     meta_path: str,
     out_root: str = "jsondb",
+    rom_root: str | None = None,
 ) -> str:
     """
     读取 `meta_path`，生成 jsondb/{key}.json，返回输出文件路径。
     """
     header, games = parse_pegasus_metadata(meta_path)
 
+    hasher = RomHasher(header_bytes=HEADER_BYTES) if rom_root else None
     if not os.path.exists(out_root):
         os.makedirs(out_root, exist_ok=True)
 
@@ -104,7 +133,16 @@ def export_platform_to_json(
         "ignore_files": ignore_files,
         "extensions": header.get("extensions", []),
         # 可以按需暴露更多 header 字段
-        "games": [_build_game_json(g, header, platform_name) for g in games],
+        "games": [
+            _build_game_json(
+                g,
+                header,
+                platform_name,
+                rom_root=rom_root,
+                hasher=hasher,
+            )
+            for g in games
+        ],
         
     }
 

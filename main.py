@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from Tools.export_to_json import export_platform_to_json
-from Utils.helpers import discover_platforms
+from Utils.helpers import discover_platforms, auto_rom_root_from_meta
 from Tools.base import verify_closure
 from Tools.json_to_metadata import json_to_metadata
 
@@ -170,7 +170,8 @@ def main():
     if args.target == "all":
         for key, (name, meta_path) in sorted(platforms.items()):
             print(f"[INFO] 导出 {key} ({name}) 到 jsondb ...")
-            out_path = export_platform_to_json(key, name, meta_path, out_root=args.out_root)
+            rom_root = str(Path(meta_path).parent)   # ✅ 用 metadata 所在目录
+            out_path = export_platform_to_json(key, name, meta_path, out_root=args.out_root,  rom_root=rom_root, )
             print(f"       -> {out_path}")
     else:
         if args.target not in platforms:
@@ -182,7 +183,8 @@ def main():
 
         name, meta_path = platforms[args.target]
         print(f"[INFO] 导出 {args.target} ({name}) 到 jsondb ...")
-        out_path = export_platform_to_json(args.target, name, meta_path, out_root=args.out_root)
+        rom_root = str(Path(meta_path).parent)
+        out_path = export_platform_to_json(args.target, name, meta_path, out_root=args.out_root, rom_root=rom_root, )
         print(f"[OK] -> {out_path}")
 
 

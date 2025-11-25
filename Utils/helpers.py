@@ -50,3 +50,12 @@ def discover_platforms(resource_root: str = "Resource"):
         platforms[key] = (name, meta_path)
 
     return platforms
+
+def auto_rom_root_from_meta(meta_path: str, user_rom_root: str | None):
+    """
+    如果 user_rom_root 显式给了，就用用户的。
+    否则自动用 metadata 文件所在目录（默认行为）。
+    """
+    if user_rom_root:
+        return user_rom_root
+    return os.path.dirname(meta_path)
