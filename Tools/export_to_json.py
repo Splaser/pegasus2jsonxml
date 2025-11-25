@@ -13,7 +13,7 @@ from pathlib import Path
 
 from typing import Dict, Optional
 
-from .metadata_scanner import parse_pegasus_metadata, extract_libretro_core
+from .metadata_scanner import parse_pegasus_metadata, extract_libretro_core, normalize_launch_block
 from .rom_scanner import HEADER_BYTES, RomHasher
 
 
@@ -66,13 +66,19 @@ def _build_game_json(
     # =====================================================
     game_launch = game.get("launch_block")
     default_launch = header.get("launch_block")
+    game_launch_str = (game_launch or "").strip()
 
-    if game_launch and (not default_launch or game_launch.strip() != default_launch.strip()):
+    # 情况 A：游戏有 override → 写 launch_override + launch_info
+    if game_launch_str and game_launch_str != default_launch:
         data["launch_override"] = game_launch
 
-        core = extract_libretro_core(game_launch)
+        info = normalize_launch_block(game_launch_str)
+        data["launch_info"] = info
+
+        core = info.get("core")
         if core:
             data["core_override"] = core
+
 
     rom_hashes = []
     for rom_path in game.get("roms", []):
@@ -114,6 +120,7 @@ def export_platform_to_json(
     """
     header, games = parse_pegasus_metadata(meta_path)
 
+
     hasher = RomHasher(header_bytes=HEADER_BYTES) if rom_root else None
     if not os.path.exists(out_root):
         os.makedirs(out_root, exist_ok=True)
@@ -153,9 +160,12 @@ def export_platform_to_json(
         
     }
 
+    default_launch = header.get("launch_block") or ""
+    default_launch_info = normalize_launch_block(default_launch)
+    
+    payload["default_launch_info"] = default_launch_info
+    payload["default_core"] = default_launch_info.get("core")
 
-    # ★ 新增 default_core
-    default_launch = header.get("launch_block", "")
     default_core = extract_libretro_core(default_launch) if default_launch else None
 
     if default_core:
@@ -166,17 +176,3 @@ def export_platform_to_json(
 
     return out_path
 
-
-# 允许单独运行：python -m Tools.export_to_json Resource/XXX/metadata.pegasus.txt KEY "平台名"
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Export one Pegasus metadata file to jsondb/*.json")
-    parser.add_argument("meta_path", help="metadata.pegasus.txt 路径")
-    parser.add_argument("key", help="输出 json 文件名的 key，比如 dc / mame_stg")
-    parser.add_argument("name", help="平台显示名，比如 DC / MAME STG")
-    parser.add_argument("--out-root", default="jsondb")
-    args = parser.parse_args()
-
-    path = export_platform_to_json(args.key, args.name, args.meta_path, out_root=args.out_root)
-    print(f"[OK] 导出到 {path}")

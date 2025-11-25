@@ -11,8 +11,67 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
+import shlex
+import os
 
+def normalize_launch_block(launch_block: str) -> Dict[str, Any]:
+    """
+    把一段 Pegasus launch 命令“正则化”，返回结构化信息：
+
+    {
+      "raw": "... 原始 launch ...",
+      "emulator": "retroarch",
+      "binary": "E:/Emu/RetroArch/retroarch.exe",
+      "core": "mednafen_saturn_hw",
+      "rom_arg_index": 3,   # 第几个 token 是 ROM 占位符
+      "tokens": [...]       # 可选：完整 tokens 列表，方便 debug
+    }
+
+    - 不改写原始命令，只做解析。
+    - 如果不是 RA / 没法识别，至少会带上 raw / tokens。
+    """
+    result: Dict[str, Any] = {
+        "raw": (launch_block or "").strip(),
+    }
+    text = result["raw"]
+    if not text:
+        return result
+
+    # 用 shlex 粗略拆 token（对大部分 Windows/Unix 命令都够用）
+    try:
+        tokens = shlex.split(text, posix=False)
+    except ValueError:
+        # 命令里有奇怪的引号，至少保留原文
+        result["tokens"] = []
+        return result
+
+    result["tokens"] = tokens
+
+    # 1) 尝试识别 emulator / binary
+    for t in tokens:
+        base = os.path.basename(t).lower()
+        if "retroarch" in base:
+            result["emulator"] = "retroarch"
+            result["binary"] = t
+            break
+
+    # 2) 提取 core 名（沿用你现有的提取逻辑）
+    from .metadata_scanner import extract_libretro_core  # 如果在同文件，直接调用即可
+    core = extract_libretro_core(text)
+    if core:
+        result["core"] = core
+
+    # 3) 找 ROM 占位符所在位置（%ROM%、{file}、%file% 之类）
+    rom_index: Optional[int] = None
+    for idx, t in enumerate(tokens):
+        if ("%ROM%" in t) or ("%rom%" in t) or ("{file}" in t) or ("%file%" in t):
+            rom_index = idx
+            break
+    if rom_index is not None:
+        result["rom_arg_index"] = rom_index
+
+    return result
 
 def _finalize_multiline_prop(
     target: Dict,
