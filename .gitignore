@@ -1,9 +1,11 @@
 Resource/
 jsondb/
 CanonicalMetadata/
+Export_ESDE/
 
 *.json
 *.jsonl
+*.xml
 
 __pycache__
 *.pyc
