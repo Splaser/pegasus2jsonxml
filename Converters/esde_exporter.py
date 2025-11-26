@@ -4,6 +4,28 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 import json
 import shutil
+import xml.etree.ElementTree as ET
+
+
+def indent(elem, level=0):
+    i = "\n" + level * "  "
+    if len(elem):
+        # 如果自己没有文本内容，先塞一行缩进给第一个子节点前
+        if not elem.text or not elem.text.strip():
+            elem.text = i + "  "
+        # 递归处理所有子节点
+        for child in elem:
+            indent(child, level + 1)
+            # 关键：给每个子节点的 tail（也就是 </child> 后面那一截）加换行 + 缩进
+            if not child.tail or not child.tail.strip():
+                child.tail = i + "  "
+        # 最后一个子节点的 tail 再回退一层缩进
+        if not elem[-1].tail or not elem[-1].tail.strip():
+            elem[-1].tail = i
+    else:
+        # 叶子节点：设置自己的 tail（出当前层级）
+        if level and (not elem.tail or not elem.tail.strip()):
+            elem.tail = i
 
 
 def export_esde(platform: str, json_path: Path, out_dir: Path, roms_subdir: str = "roms"):
@@ -43,6 +65,9 @@ def export_esde(platform: str, json_path: Path, out_dir: Path, roms_subdir: str 
             if not rel:
                 continue
             _copy_asset(json_path.parent, out_platform_dir, rel)
+
+    # ElementTree 自己缩进
+    indent(root)
 
     out_path = out_platform_dir / "gamelist.xml"
     tree = ET.ElementTree(root)
