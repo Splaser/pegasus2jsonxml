@@ -25,11 +25,9 @@ def normalize_launch_block(launch_block: str) -> Dict[str, Any]:
       "binary": "E:/Emu/RetroArch/retroarch.exe",
       "core": "mednafen_saturn_hw",
       "rom_arg_index": 3,   # 第几个 token 是 ROM 占位符
-      "tokens": [...]       # 可选：完整 tokens 列表，方便 debug
+      "tokens": [...],      # 完整 tokens 列表
+      "kind": "android_am"  # 可选：Android am start 之类的类型标记
     }
-
-    - 不改写原始命令，只做解析。
-    - 如果不是 RA / 没法识别，至少会带上 raw / tokens。
     """
     result: Dict[str, Any] = {
         "raw": (launch_block or "").strip(),
@@ -48,7 +46,28 @@ def normalize_launch_block(launch_block: str) -> Dict[str, Any]:
 
     result["tokens"] = tokens
 
-    # 1) 尝试识别 emulator / binary
+    # 1) 先尝试识别 Android am start（AetherSX2 / NetherSX2）
+    if tokens and tokens[0] == "am" and len(tokens) >= 2 and tokens[1] == "start":
+        result["kind"] = "android_am"
+
+        pkg_activity: Optional[str] = None
+        for i, t in enumerate(tokens):
+            if t == "-n" and i + 1 < len(tokens):
+                pkg_activity = tokens[i + 1]
+                break
+
+        if pkg_activity:
+            result["binary"] = pkg_activity
+            lower = pkg_activity.lower()
+            if "aethersx2" in lower:
+                result["emulator"] = "aethersx2_android"
+            elif "nethersx2" in lower:
+                result["emulator"] = "nethersx2_android"
+            else:
+                # 兜底：未知的 Android Activity
+                result.setdefault("emulator", "android_activity")
+
+    # 2) 再尝试识别 RetroArch emulator / binary
     for t in tokens:
         base = os.path.basename(t).lower()
         if "retroarch" in base:
@@ -56,22 +75,26 @@ def normalize_launch_block(launch_block: str) -> Dict[str, Any]:
             result["binary"] = t
             break
 
-    # 2) 提取 core 名（沿用你现有的提取逻辑）
-    from .metadata_scanner import extract_libretro_core  # 如果在同文件，直接调用即可
+    # 3) 提取 core 名（直接调用同文件里的 extract_libretro_core）
     core = extract_libretro_core(text)
     if core:
         result["core"] = core
 
-    # 3) 找 ROM 占位符所在位置（%ROM%、{file}、%file% 之类）
+    # 4) 找 ROM 占位符所在位置（%ROM%、{file}、%file% 之类）
     rom_index: Optional[int] = None
     for idx, t in enumerate(tokens):
-        if ("%ROM%" in t) or ("%rom%" in t) or ("{file}" in t) or ("%file%" in t):
+        # "{file" 比 "{file}" 更宽松，能覆盖 {file.documenturi}、
+        # tfcardid{ABCD-1234}:{file.path} 这种形式
+        if ("%ROM%" in t) or ("%rom%" in t) or ("{file" in t) or ("%file%" in t):
             rom_index = idx
             break
+
     if rom_index is not None:
         result["rom_arg_index"] = rom_index
 
     return result
+
+
 
 def _finalize_multiline_prop(
     target: Dict,

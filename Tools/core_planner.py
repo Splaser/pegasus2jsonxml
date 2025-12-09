@@ -37,24 +37,43 @@ def choose_core_for_game(
     if core:
         return core
 
-    # 2) platform metadata default
+    platform_key_lower = (platform_key or "").lower()
+
+    # 2) 平台级默认 core（来自 export_to_json / header launch 解析）
     core = payload.get("default_core")
     if core:
         return core
 
-    # 3) 静态平台表
-    core = PLATFORM_DEFAULT_CORES.get(platform_key)
+    # ------- 重点：PS2 目前统一走 Android AetherSX2 / NetherSX2 standalone -------
+    # 暂时不自动分配 libretro core，防止 .chd 被误绑 Saturn/DC
+    if platform_key_lower in ("ps2", "playstation2"):
+        return None
+
+    # 3) 平台 key 兜底（注意用小写 key）
+    core = PLATFORM_DEFAULT_CORES.get(platform_key_lower)
     if core:
         return core
 
     # 4) 看 file / roms 的扩展名兜底
-    file_name = game.get("file") or ""
-    import os
-    _, ext = os.path.splitext(file_name)
-    ext = ext.lower()
+    rom_path = None
 
-    core = EXT_CORE_MAP.get(ext)
-    if core:
-        return core
+    # 允许 game["file"] / game["rom"] / game["roms"][0] 这几种
+    if isinstance(game.get("file"), str):
+        rom_path = game["file"]
+    elif isinstance(game.get("rom"), str):
+        rom_path = game["rom"]
+    else:
+        roms = game.get("roms") or []
+        if roms and isinstance(roms[0], str):
+            rom_path = roms[0]
 
+    if rom_path:
+        _, _, ext = rom_path.rpartition(".")
+        if ext:
+            ext = "." + ext.lower()
+            core = EXT_CORE_MAP.get(ext)
+            if core:
+                return core
+
+    # 实在猜不到就 None，让上层决定是报错还是走原始 launch
     return None

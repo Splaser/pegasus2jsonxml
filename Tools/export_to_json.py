@@ -160,19 +160,46 @@ def export_platform_to_json(
         
     }
 
-    default_launch = header.get("launch_block") or ""
-    default_launch_info = normalize_launch_block(default_launch)
+    default_launch = (
+        header.get("launch")
+        or header.get("launch_block")
+        or header.get("default_launch")
+    )
     
+    default_launch_info = normalize_launch_block(default_launch) if default_launch else {}
+
     payload["default_launch_info"] = default_launch_info
     payload["default_core"] = default_launch_info.get("core")
 
+    # 从原始 launch 文本里再试一次提取 core（兼容老写法）
     default_core = extract_libretro_core(default_launch) if default_launch else None
-
     if default_core:
         payload["default_core"] = default_core
-    
+
+    # ------- 新增：平台元信息 platform_key / platform_type -------
+    payload["platform_key"] = key
+
+    plat_key_lower = (key or "").lower()
+    collection_lower = str(header.get("collection") or "").lower()
+
+    # 推断一个简洁的 platform_type，后续 exporter 可以直接 switch
+    if plat_key_lower in ("ps2", "playstation2") or "ps2" in collection_lower:
+        kind = default_launch_info.get("kind")
+        emulator = default_launch_info.get("emulator")
+        if kind == "android_am" and emulator in ("aethersx2_android", "nethersx2_android"):
+            platform_type = "ps2_android_aethersx2"
+        else:
+            platform_type = "ps2"
+    else:
+        # 其他平台先简单兜底
+        platform_type = plat_key_lower or (collection_lower or "unknown")
+
+    payload["platform_type"] = platform_type
+
+    # ------- 写盘 -------
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
     return out_path
+
 
