@@ -2,6 +2,7 @@ Resource/
 jsondb/
 CanonicalMetadata/
 Export_ESDE/
+Samples/
 
 *.json
 *.jsonl
