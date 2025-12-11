@@ -9,12 +9,48 @@ from __future__ import annotations
 import hashlib
 import os
 import json
-from pathlib import Path 
+from pathlib import Path, PurePosixPath
 
 from typing import Dict, Optional
 
 from .metadata_scanner import parse_pegasus_metadata, extract_libretro_core, normalize_launch_block
 from .rom_scanner import HEADER_BYTES, RomHasher
+
+
+def _normalize_assets_media_dir(
+    assets: Dict,
+    file_name: Optional[str]
+) -> Dict:
+    """
+    把 assets 里的 media 目录统一改成 media/<file_stem>/xxx。
+    """
+    if not isinstance(assets, dict) or not file_name:
+        return assets
+
+    # 取文件名最后一段，再去掉扩展名：例如 "506.chd" -> "506"
+    fname = file_name.split("/")[-1]
+    stem = fname.rsplit(".", 1)[0] or fname
+
+    new_assets: Dict = {}
+    for k, v in assets.items():
+        if not isinstance(v, str):
+            new_assets[k] = v
+            continue
+
+        p = PurePosixPath(v)
+        parts = list(p.parts)
+
+        # 只处理以 media 开头的路径：media/xxx/...
+        if len(parts) >= 2 and parts[0] == "media":
+            rest = parts[2:]  # 去掉原来的第二段（不管是中文名还是数字）
+            new_p = PurePosixPath("media") / stem
+            for comp in rest:
+                new_p /= comp
+            new_assets[k] = str(new_p)
+        else:
+            new_assets[k] = v
+
+    return new_assets
 
 
 def _build_game_json(
@@ -46,7 +82,9 @@ def _build_game_json(
         data["description"] = game["description"]
 
     if "assets" in game:
-        data["assets"] = game["assets"]
+        raw_assets = game["assets"]
+        fixed_assets = _normalize_assets_media_dir(raw_assets, file_name)
+        data["assets"] = fixed_assets
 
     # =====================================================
     # 🔥 新增: canonical_name（短期先等于 game）
