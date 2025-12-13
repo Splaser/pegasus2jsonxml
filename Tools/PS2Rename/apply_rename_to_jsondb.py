@@ -1,6 +1,6 @@
 import json
 from pathlib import Path, PurePosixPath
-from rename_ps2_chd import sanitize_filename
+from rename_ps2_chd import sanitize_filename, load_name_mapping
 
 
 def _infer_media_stem(game: dict) -> str | None:
@@ -25,36 +25,6 @@ def _infer_media_stem(game: dict) -> str | None:
     return None
 
 
-def load_name_mapping(mapping_path: Path) -> dict[str, str]:
-    """
-    从 ps2_mapping_redump.json 读取映射，返回：
-    {"001.chd": "God of War (USA).chd", ...}
-    """
-    with mapping_path.open("r", encoding="utf-8") as f:
-        raw = json.load(f)
-
-    result: dict[str, str] = {}
-    for key, val in raw.items():
-        old = key.strip()
-        if not old.lower().endswith(".chd"):
-            old = old + ".chd"
-
-        if isinstance(val, dict):
-            base = (val.get("en") or val.get("cn") or "").strip()
-        else:
-            base = str(val).strip()
-
-        if not base:
-            continue
-
-        target = sanitize_filename(base)
-
-        if not target.lower().endswith(".chd"):
-            target += ".chd"
-
-        result[old] = target
-
-    return result
 
 
 def _fix_assets_paths(game: dict, media_stem: str | None) -> None:
@@ -161,10 +131,9 @@ def apply_to_jsondb(jsondb_path: Path, mapping: dict[str, str]) -> None:
 if __name__ == "__main__":
     base_dir = Path(__file__).resolve().parent          # PS2Rename
     proj_root = base_dir.parent.parent                  # 项目根
-    mapping_path = base_dir / "ps2_mapping_redump.json"
     jsondb_ps2 = proj_root / "jsondb" / "ps2.json"
     # jsondb_ps2_hack = proj_root / "jsondb" / "ps2_hack.json"
 
-    mp = load_name_mapping(mapping_path)
+    mp = load_name_mapping()
     apply_to_jsondb(jsondb_ps2, mp)
     # apply_to_jsondb(jsondb_ps2_hack, mp)

@@ -5,39 +5,7 @@ import json
 from pathlib import Path
 from typing import Dict, Any
 
-from rename_ps2_chd import sanitize_filename   # 和你改CHD时用的是同一个函数
-
-
-def load_name_mapping(mapping_path: Path) -> Dict[str, str]:
-    """
-    从 ps2_mapping_redump.json 读取映射，返回：
-    {"001.chd": "God of War (USA).chd", ...}
-    """
-    with mapping_path.open("r", encoding="utf-8") as f:
-        raw = json.load(f)
-
-    result: Dict[str, str] = {}
-    for key, val in raw.items():
-        old = key.strip()
-        if not old.lower().endswith(".chd"):
-            old = old + ".chd"
-
-        # 取 en 优先，没有就退回 cn
-        if isinstance(val, dict):
-            base = (val.get("en") or val.get("cn") or "").strip()
-        else:
-            base = str(val).strip()
-
-        if not base:
-            continue
-
-        target = sanitize_filename(base)
-        if not target.lower().endswith(".chd"):
-            target += ".chd"
-
-        result[old] = target
-
-    return result
+from rename_ps2_chd import sanitize_filename, load_name_mapping
 
 
 def rename_media_dirs(media_root: Path, mapping: Dict[str, str]) -> None:
@@ -79,8 +47,7 @@ if __name__ == "__main__":
     base_dir = Path(__file__).resolve().parent      # PS2Rename 目录
     proj_root = base_dir.parent.parent
 
-    mapping_path = base_dir / "ps2_mapping_redump.json"
     media_root = Path("G:/roms/PS2/media")          # ← 把这里改成你 TF 卡上的 PS2 media 路径
 
-    mp = load_name_mapping(mapping_path)
+    mp = load_name_mapping()
     rename_media_dirs(media_root, mp)
