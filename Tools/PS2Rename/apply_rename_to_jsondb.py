@@ -1,6 +1,28 @@
 import json
 from pathlib import Path, PurePosixPath
-from rename_ps2_chd import sanitize_filename 
+from rename_ps2_chd import sanitize_filename
+
+
+def _infer_media_stem(game: dict) -> str | None:
+    # 1) 优先从 file 推（仅当是纯数字）
+    old_file = game.get("file")
+    if isinstance(old_file, str) and old_file:
+        fname = old_file.split("/")[-1]
+        stem = fname.rsplit(".", 1)[0]
+        if stem.isdigit():
+            return stem
+
+    # 2) 否则从 assets 路径推（media/<stem>/xxx）
+    assets = game.get("assets")
+    if isinstance(assets, dict):
+        for v in assets.values():
+            if isinstance(v, str):
+                p = PurePosixPath(v)
+                parts = list(p.parts)
+                if len(parts) >= 2 and parts[0] == "media" and parts[1].isdigit():
+                    return parts[1]
+
+    return None
 
 
 def load_name_mapping(mapping_path: Path) -> dict[str, str]:
@@ -24,7 +46,7 @@ def load_name_mapping(mapping_path: Path) -> dict[str, str]:
 
         if not base:
             continue
-        
+
         target = sanitize_filename(base)
 
         if not target.lower().endswith(".chd"):
@@ -80,7 +102,7 @@ def apply_to_jsondb(jsondb_path: Path, mapping: dict[str, str]) -> None:
     for g in games:
         # 保存旧的 file 名（用来提取数字编号）
         old_file = g.get("file")
-        old_stem = None
+        old_stem = _infer_media_stem(g)
         if isinstance(old_file, str) and old_file:
             # 只取文件名最后一段，然后去掉扩展名
             fname = old_file.split("/")[-1]
@@ -123,12 +145,17 @@ def apply_to_jsondb(jsondb_path: Path, mapping: dict[str, str]) -> None:
         # 4) 统一矫正 assets 路径 -> media/<old_stem>/xxx
         _fix_assets_paths(g, old_stem)
 
-    out_path = jsondb_path.with_name(jsondb_path.stem + "_renamed.json")
-    with out_path.open("w", encoding="utf-8") as f:
+    # 先备份（仅第一次备份，不覆盖老备份）
+    bak_path = jsondb_path.with_suffix(jsondb_path.suffix + ".bak")
+    if not bak_path.exists():
+        bak_path.write_bytes(jsondb_path.read_bytes())
+        print(f"🧷 已备份：{bak_path}")
+    
+    # 直接覆盖写回原文件
+    with jsondb_path.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    print(f"\n✅ 已写回 {jsondb_path.name}，共修改 {changed} 条 game.file")
 
-    print(f"\n✅ 已处理完 {jsondb_path.name}，共修改 {changed} 条 game.file")
-    print(f"输出文件：{out_path}")
 
 
 if __name__ == "__main__":
@@ -137,7 +164,7 @@ if __name__ == "__main__":
     mapping_path = base_dir / "ps2_mapping_redump.json"
     jsondb_ps2 = proj_root / "jsondb" / "ps2.json"
     # jsondb_ps2_hack = proj_root / "jsondb" / "ps2_hack.json"
-    
+
     mp = load_name_mapping(mapping_path)
     apply_to_jsondb(jsondb_ps2, mp)
     # apply_to_jsondb(jsondb_ps2_hack, mp)
