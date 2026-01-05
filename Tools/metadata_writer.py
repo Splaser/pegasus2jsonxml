@@ -148,6 +148,38 @@ def _emit_assets_lines(f, game: dict):
         if isinstance(v, str) and v.strip():
             f.write(f"assets.{key}: {v}\n")
 
+def _emit_launch_block(f: TextIO, game: Dict[str, Any]) -> None:
+    """
+    Write Pegasus 'launch' block. Prefer raw override string if available.
+    Accepts several possible keys for compatibility.
+    """
+    raw = None
+
+    # ✅ 优先：你 json 已经有这个
+    for key in ("launch_override", "launch_block", "launch"):
+        v = game.get(key)
+        if isinstance(v, str) and v.strip():
+            raw = v.strip("\n")
+            break
+
+    # 兼容：如果 launch 被存成 list[str]
+    if raw is None:
+        v = game.get("launch")
+        if isinstance(v, list) and v:
+            raw = "\n".join(str(x) for x in v).strip("\n")
+
+    if not raw:
+        return
+
+    lines = raw.splitlines()
+    if len(lines) == 1:
+        f.write(f"launch: {lines[0].rstrip()}\n")
+    else:
+        f.write("launch:\n")
+        for line in lines:
+            f.write(f"  {line.rstrip()}\n")
+
+
 
 def _write_game(f: TextIO, game: Dict[str, Any]) -> None:
     # 这里用的字段名要和 parse_pegasus_metadata 产出的 dict 对齐
@@ -191,22 +223,7 @@ def _write_game(f: TextIO, game: Dict[str, Any]) -> None:
             for line in lines:
                 f.write(f'  {line}\n')
 
-    # launch（per-game override）
-    launch_block = game.get("launch_block")
-    if launch_block:
-        lines = launch_block.splitlines()
-        if len(lines) == 1:
-            f.write(f'launch: {lines[0]}\n')
-        else:
-            f.write('launch:\n')
-            for line in lines:
-                f.write(f'  {line}\n')
-
-    # 你如果想把 core_override 映射回 launch 里的 -L cores/xxx_libretro_android.so
-    # 也可以在这里反向构造一行
-    # core = game.get("core_override")
-    # if core and not launch_block:
-    #     f.write(f'launch: retroarch -L "{core}" "{{file}}"\n')
+    _emit_launch_block(f, game)
 
     f.write("\n")  # game block 之间空一行
 
