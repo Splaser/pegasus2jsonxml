@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 from typing import Dict, List, Any, TextIO
+from pathlib import PurePosixPath
+
 
 def _write_header(f: TextIO, header: Dict[str, Any]) -> None:
     # 这里把 parse_pegasus_metadata 得到的规范字段写回 Pegasus 语法
@@ -50,44 +52,101 @@ def _write_header(f: TextIO, header: Dict[str, Any]) -> None:
 
         f.write("\n")  # 头部和 games 之间空一行
 
-def _emit_assets_lines(f, game: dict):
-    """
-    Write:
-      assets.box_front: ...
-      assets.logo: ...
-      assets.video: ...
-    from either structured dict game["assets"] or legacy flat keys.
-    """
-    assets = {}
+def _is_multi_disc(game: dict) -> bool:
+    # 你这边内部结构可能是 roms，也可能是 files
+    roms = game.get("roms")
+    if isinstance(roms, list) and len(roms) > 1:
+        return True
 
-    # 1) structured assets dict (preferred)
+    files = game.get("files")
+    if isinstance(files, list) and len(files) > 1:
+        return True
+
+    # 有些导入器会同时存 file + roms，file不算
+    return False
+
+def _infer_media_base_from_multifiles(game: dict) -> str | None:
+    """
+    For multi-disc entries like:
+      009/Lunar 2 Eternal Blue (Japan).m3u
+      009/... (DISC 1).chd
+    return "009".
+    """
+    lst = game.get("roms")
+    if not (isinstance(lst, list) and len(lst) > 1):
+        lst = game.get("files")
+
+    if not (isinstance(lst, list) and len(lst) > 1):
+        return None
+
+    first = lst[0]
+    if not isinstance(first, str) or not first.strip():
+        return None
+
+    parts = PurePosixPath(first.strip()).parts
+    if len(parts) >= 2:
+        return parts[0]  # <- "009" / "012"
+    return None
+
+def _collect_assets(game: dict) -> dict:
+    assets = {}
     a = game.get("assets")
     if isinstance(a, dict):
         for k, v in a.items():
             if isinstance(v, str) and v.strip():
                 assets[k] = v.strip()
 
-    # 2) legacy flat keys: "assets.box_front" etc.
+    # legacy flat keys: assets.xxx
     for k, v in game.items():
         if isinstance(k, str) and k.startswith("assets.") and isinstance(v, str) and v.strip():
             sub = k.split(".", 1)[1].strip()
             if sub and sub not in assets:
                 assets[sub] = v.strip()
 
+    return assets
+
+def _rewrite_media_path_keep_filename(v: str, media_base: str) -> str:
+    """
+    media/ANYTHING/filename -> media/<media_base>/filename
+    If not starting with media/, keep unchanged.
+    """
+    p = PurePosixPath(v)
+    parts = p.parts
+    if len(parts) >= 2 and parts[0] == "media":
+        return str(PurePosixPath("media") / media_base / parts[-1])
+    return v
+
+def _emit_assets_lines(f, game: dict):
+    # ✅ 只在多碟时显式写回
+    if not _is_multi_disc(game):
+        return
+
+    assets = _collect_assets(game)
+
+    # ✅ 多碟但 assets 缺失：按 media/<firstDir>/ 默认补三条（可选）
+    media_base = _infer_media_base_from_multifiles(game)
+    if not assets and media_base:
+        assets = {
+            "box_front": f"media/{media_base}/boxFront.png",
+            "logo":      f"media/{media_base}/logo.png",
+            "video":     f"media/{media_base}/video.mp4",
+        }
+
     if not assets:
         return
 
-    # keep a stable order for common fields
-    ordered = ["box_front", "logo", "video"]
-    for key in ordered:
-        if key in assets:
-            f.write(f"assets.{key}: {assets[key]}\n")
+    # ✅ 关键：多碟时强制把 media 目录改成 firstDir（009/012）
+    if media_base:
+        for k in list(assets.keys()):
+            v = assets[k]
+            if isinstance(v, str) and v.strip():
+                assets[k] = _rewrite_media_path_keep_filename(v, media_base)
 
-    # write any extra assets (marquee/screenshot/etc.)
-    for key in sorted(assets.keys()):
-        if key in ordered:
-            continue
-        f.write(f"assets.{key}: {assets[key]}\n")
+    # 稳定输出顺序
+    for key in ["box_front", "logo", "video"]:
+        v = assets.get(key)
+        if isinstance(v, str) and v.strip():
+            f.write(f"assets.{key}: {v}\n")
 
 
 def _write_game(f: TextIO, game: Dict[str, Any]) -> None:
