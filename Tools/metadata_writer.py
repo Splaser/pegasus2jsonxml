@@ -50,6 +50,45 @@ def _write_header(f: TextIO, header: Dict[str, Any]) -> None:
 
         f.write("\n")  # 头部和 games 之间空一行
 
+def _emit_assets_lines(f, game: dict):
+    """
+    Write:
+      assets.box_front: ...
+      assets.logo: ...
+      assets.video: ...
+    from either structured dict game["assets"] or legacy flat keys.
+    """
+    assets = {}
+
+    # 1) structured assets dict (preferred)
+    a = game.get("assets")
+    if isinstance(a, dict):
+        for k, v in a.items():
+            if isinstance(v, str) and v.strip():
+                assets[k] = v.strip()
+
+    # 2) legacy flat keys: "assets.box_front" etc.
+    for k, v in game.items():
+        if isinstance(k, str) and k.startswith("assets.") and isinstance(v, str) and v.strip():
+            sub = k.split(".", 1)[1].strip()
+            if sub and sub not in assets:
+                assets[sub] = v.strip()
+
+    if not assets:
+        return
+
+    # keep a stable order for common fields
+    ordered = ["box_front", "logo", "video"]
+    for key in ordered:
+        if key in assets:
+            f.write(f"assets.{key}: {assets[key]}\n")
+
+    # write any extra assets (marquee/screenshot/etc.)
+    for key in sorted(assets.keys()):
+        if key in ordered:
+            continue
+        f.write(f"assets.{key}: {assets[key]}\n")
+
 
 def _write_game(f: TextIO, game: Dict[str, Any]) -> None:
     # 这里用的字段名要和 parse_pegasus_metadata 产出的 dict 对齐
@@ -78,6 +117,9 @@ def _write_game(f: TextIO, game: Dict[str, Any]) -> None:
     developer = game.get("developer")
     if developer:
         f.write(f'developer: {developer}\n')
+
+    # assets.*
+    _emit_assets_lines(f, game)
 
     # description 多行
     desc = game.get("description")

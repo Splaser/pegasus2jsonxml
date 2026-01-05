@@ -295,6 +295,16 @@ def parse_pegasus_metadata(path: str) -> Tuple[Dict, List[Dict]]:
                     # 不把 "file" 作为多行字段继续累积
                     continue
 
+                # assets 处理
+                if key.startswith("assets."):
+                    if in_header or current_game is None:
+                        continue
+                    sub = key.split(".", 1)[1].strip()
+                    if sub:
+                        assets = current_game.setdefault("assets", {})
+                        assets[sub] = value
+                    continue
+
                 # 启动多行属性（launch, description, ignore-files, extension 等）
                 if key in ("launch", "description", "ignore-files", "extension", "extensions", "files"):
                     current_key = key

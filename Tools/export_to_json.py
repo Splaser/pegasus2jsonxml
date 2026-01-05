@@ -42,11 +42,17 @@ def _normalize_assets_media_dir(
 
         # 只处理以 media 开头的路径：media/xxx/...
         if len(parts) >= 2 and parts[0] == "media":
-            rest = parts[2:]  # 去掉原来的第二段（不管是中文名还是数字）
-            new_p = PurePosixPath("media") / stem
-            for comp in rest:
-                new_p /= comp
-            new_assets[k] = str(new_p)
+            # ✅ 只有当第二段是纯数字目录时，才执行“统一到 file_stem”
+            #    例如 media/001/boxfront.png → media/<stem>/boxfront.png
+            if len(parts) >= 3 and parts[1].isdigit():
+                rest = parts[2:]  # 去掉原来的第二段（数字目录）
+                new_p = PurePosixPath("media") / stem
+                for comp in rest:
+                    new_p /= comp
+                new_assets[k] = str(new_p)
+            else:
+                # ✅ 非数字目录（例如中文名/英文名）一律保持原样
+                new_assets[k] = v
         else:
             new_assets[k] = v
 
