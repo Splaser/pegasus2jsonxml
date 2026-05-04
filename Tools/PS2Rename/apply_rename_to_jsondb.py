@@ -1,6 +1,6 @@
 import json
 from pathlib import Path, PurePosixPath
-from rename_ps2_chd import sanitize_filename, load_name_mapping
+from rename_ps2_chd import load_name_mapping
 
 
 def _infer_media_stem(game: dict) -> str | None:

@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict
 
-from rename_ps2_chd import sanitize_filename, load_name_mapping
+from rename_ps2_chd import load_name_mapping
 
 
 def rename_media_dirs(media_root: Path, mapping: Dict[str, str]) -> None:
