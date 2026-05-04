@@ -5,6 +5,129 @@ from typing import Dict, List, Any, TextIO
 from pathlib import PurePosixPath
 
 
+DEFAULT_ASSET_NAMES = {
+    "box_front": {
+        "boxfront.png",
+        "boxfront.jpg",
+        "boxFront.png",
+        "boxFront.jpg",
+        "box_front.png",
+        "box_front.jpg",
+    },
+    "logo": {
+        "logo.png",
+        "logo.jpg",
+    },
+    "video": {
+        "video.mp4",
+        "video.webm",
+    },
+}
+
+def _infer_rom_stem_base_from_game(game: dict) -> str | None:
+    """
+    默认 media 目录按 ROM basename/stem 推断：
+      mslug.zip          -> media/mslug/...
+      mslugqy.zip        -> media/mslugqy/...
+      mslugd/mslug.zip   -> media/mslug/...
+    """
+    roms = game.get("roms")
+    if isinstance(roms, list) and roms:
+        first = roms[0]
+    else:
+        first = game.get("file")
+
+    if not isinstance(first, str) or not first.strip():
+        return None
+
+    return PurePosixPath(first.strip()).stem
+
+
+def _infer_noise_title_bases_from_game(game: dict) -> set[str]:
+    """
+    兼容旧导出器误生成的 media/<中文游戏名>/ 三件套。
+    你的实际资源库不是这种结构，所以这类 assets 不写回。
+    """
+    bases = set()
+    for key in ("canonical_name", "game", "title"):
+        v = game.get(key)
+        if isinstance(v, str) and v.strip():
+            bases.add(v.strip())
+    return bases
+
+def _asset_media_dir_and_filename(value: str) -> tuple[str | None, str | None]:
+    p = PurePosixPath(value.strip())
+    parts = p.parts
+
+    if len(parts) < 3:
+        return None, None
+
+    if parts[0] != "media":
+        return None, None
+
+    return parts[1], parts[-1]
+
+def _is_standard_asset_filename(key: str, filename: str | None) -> bool:
+    if not filename:
+        return False
+    return filename in DEFAULT_ASSET_NAMES.get(key, set())
+
+def _infer_rom_parent_base_from_game(game: dict) -> str | None:
+    """
+    file: mslugd/mslug.zip -> mslugd
+    file: 恐龙新世纪 无限保险版/dino.zip -> 恐龙新世纪 无限保险版
+    file: mslugqy.zip -> None
+    """
+    roms = game.get("roms")
+    if isinstance(roms, list) and roms:
+        first = roms[0]
+    else:
+        first = game.get("file")
+
+    if not isinstance(first, str) or not first.strip():
+        return None
+
+    p = PurePosixPath(first.strip())
+    parts = p.parts
+
+    if len(parts) >= 2:
+        return parts[0]
+
+    return None
+
+
+def _should_emit_asset_line(key: str, value: str, game: dict) -> bool:
+    media_dir, filename = _asset_media_dir_and_filename(value)
+
+    if not media_dir or not filename:
+        # 非 media/... 结构，保守写出
+        return True
+
+    if not _is_standard_asset_filename(key, filename):
+        # 非标准文件名，可能是手工指定，保守写出
+        return True
+
+    rom_stem = _infer_rom_stem_base_from_game(game)
+    rom_parent = _infer_rom_parent_base_from_game(game)
+
+    # 嵌套 ROM 的父目录 media override 必须写：
+    # file: mslugd/mslug.zip -> media/mslugd/...
+    # file: 恐龙新世纪 无限保险版/dino.zip -> media/恐龙新世纪 无限保险版/...
+    if rom_parent and media_dir == rom_parent:
+        return True
+
+    # 默认 media/<rom_stem>/ 三件套，不写
+    if rom_stem and media_dir == rom_stem:
+        return False
+
+    # 旧错误生成的 media/<中文游戏名>/ 三件套：
+    # 只有在它不是 ROM 父目录时才不写
+    if media_dir in _infer_noise_title_bases_from_game(game):
+        return False
+
+    # 其他 media 目录都是显式 override，要写
+    return True
+
 def _write_header(f: TextIO, header: Dict[str, Any]) -> None:
     # 这里把 parse_pegasus_metadata 得到的规范字段写回 Pegasus 语法
     collection = header.get("collection")
@@ -52,18 +175,7 @@ def _write_header(f: TextIO, header: Dict[str, Any]) -> None:
 
         f.write("\n")  # 头部和 games 之间空一行
 
-def _is_multi_disc(game: dict) -> bool:
-    # 你这边内部结构可能是 roms，也可能是 files
-    roms = game.get("roms")
-    if isinstance(roms, list) and len(roms) > 1:
-        return True
 
-    files = game.get("files")
-    if isinstance(files, list) and len(files) > 1:
-        return True
-
-    # 有些导入器会同时存 file + roms，file不算
-    return False
 
 def _infer_media_base_from_multifiles(game: dict) -> str | None:
     """
@@ -116,37 +228,47 @@ def _rewrite_media_path_keep_filename(v: str, media_base: str) -> str:
         return str(PurePosixPath("media") / media_base / parts[-1])
     return v
 
+
 def _emit_assets_lines(f, game: dict):
-    # ✅ 只在多碟时显式写回
-    if not _is_multi_disc(game):
+    assets = _collect_assets(game)
+    media_base = _infer_media_base_from_multifiles(game)
+
+    # ✅ 多碟 / 多文件条目：保留老逻辑，强制写 assets
+    # 因为这类默认推断不可靠，需要 media/<firstDir>/ 三件套。
+    if media_base:
+        if not assets:
+            assets = {
+                "box_front": f"media/{media_base}/boxFront.png",
+                "logo":      f"media/{media_base}/logo.png",
+                "video":     f"media/{media_base}/video.mp4",
+            }
+        else:
+            for k in list(assets.keys()):
+                v = assets[k]
+                if isinstance(v, str) and v.strip():
+                    assets[k] = _rewrite_media_path_keep_filename(v, media_base)
+
+        for key in ["box_front", "logo", "video"]:
+            v = assets.get(key)
+            if isinstance(v, str) and v.strip():
+                f.write(f"assets.{key}: {v.strip()}\n")
         return
 
-    assets = _collect_assets(game)
-
-    # ✅ 多碟但 assets 缺失：按 media/<firstDir>/ 默认补三条（可选）
-    media_base = _infer_media_base_from_multifiles(game)
-    if not assets and media_base:
-        assets = {
-            "box_front": f"media/{media_base}/boxFront.png",
-            "logo":      f"media/{media_base}/logo.png",
-            "video":     f"media/{media_base}/video.mp4",
-        }
-
+    # ✅ 普通单 ROM：只写真正的 assets override
     if not assets:
         return
 
-    # ✅ 关键：多碟时强制把 media 目录改成 firstDir（009/012）
-    if media_base:
-        for k in list(assets.keys()):
-            v = assets[k]
-            if isinstance(v, str) and v.strip():
-                assets[k] = _rewrite_media_path_keep_filename(v, media_base)
-
-    # 稳定输出顺序
     for key in ["box_front", "logo", "video"]:
         v = assets.get(key)
-        if isinstance(v, str) and v.strip():
-            f.write(f"assets.{key}: {v}\n")
+        if not (isinstance(v, str) and v.strip()):
+            continue
+
+        v = v.strip()
+
+        if not _should_emit_asset_line(key, v, game):
+            continue
+
+        f.write(f"assets.{key}: {v}\n")
 
 def _emit_launch_block(f: TextIO, game: Dict[str, Any]) -> None:
     """

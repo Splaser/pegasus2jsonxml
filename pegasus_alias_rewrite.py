@@ -56,29 +56,48 @@ def core_to_alias(core: str | None) -> str | None:
         return core
 
     core = core.strip()
-
-    # Already alias
-    if "/" not in core and not core.endswith(".so"):
-        return core
-
     name = core.replace("\\", "/").split("/")[-1]
 
+    # Explicit known weird aliases / legacy values
     special = {
         "mame_libretro_android.so": "mamearcade",
+        "mame_libretro_android": "mamearcade",
         "mamearcade_libretro_android.so": "mamearcade",
+        "mamearcade_libretro_android": "mamearcade",
+
+        # old dirty configs
+        "fbneo_libretro_old_android.so": "fbneo",
+        "fbneo_libretro_old_android": "fbneo",
+        "fbalpha_libretro_old_android.so": "fbalpha",
+        "fbalpha_libretro_old_android": "fbalpha",
     }
+
     if name in special:
         return special[name]
 
-    suffix = "_libretro_android.so"
-    if name.endswith(suffix):
-        return name[:-len(suffix)]
+    # Already clean alias
+    if "/" not in core and not name.endswith(".so") and "_libretro_" not in name:
+        return core
+
+    # Generic suffix stripping
+    suffixes = [
+        "_libretro_android.so",
+        "_libretro_android",
+        "_libretro_old_android.so",
+        "_libretro_old_android",
+    ]
+
+    for suffix in suffixes:
+        if name.endswith(suffix):
+            base = name[:-len(suffix)]
+            if base == "mame":
+                return "mamearcade"
+            return base
 
     if name.endswith(".so"):
         return name[:-3]
 
     return core
-
 
 CORE_PATH_RE = re.compile(
     r"(/data/data/com\.retroarch\.aarch64/cores/)?([A-Za-z0-9_]+)_libretro_android\.so"
