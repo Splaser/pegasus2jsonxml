@@ -95,7 +95,6 @@ def _infer_rom_parent_base_from_game(game: dict) -> str | None:
 
     return None
 
-
 def _should_emit_asset_line(key: str, value: str, game: dict) -> bool:
     media_dir, filename = _asset_media_dir_and_filename(value)
 
@@ -107,21 +106,23 @@ def _should_emit_asset_line(key: str, value: str, game: dict) -> bool:
         # 非标准文件名，可能是手工指定，保守写出
         return True
 
-    rom_stem = _infer_rom_stem_base_from_game(game)
     rom_parent = _infer_rom_parent_base_from_game(game)
+    rom_stem = _infer_rom_stem_base_from_game(game)
 
-    # 嵌套 ROM 的父目录 media override 必须写：
-    # file: mslugd/mslug.zip -> media/mslugd/...
-    # file: 恐龙新世纪 无限保险版/dino.zip -> media/恐龙新世纪 无限保险版/...
-    if rom_parent and media_dir == rom_parent:
+    # 关键修正：
+    # 嵌套 ROM 的资源推断不稳定，只要 JSON 里显式给了 assets，就写回。
+    # 覆盖：
+    #   mslugd/mslug.zip -> media/mslugd/...
+    #   恐龙新世纪 无限保险版/dino.zip -> media/恐龙新世纪 无限保险版/...
+    #   hxs1/powerins.zip -> media/powerins/...
+    if rom_parent:
         return True
 
-    # 默认 media/<rom_stem>/ 三件套，不写
+    # 单层 ROM：默认 media/<rom_stem>/ 三件套，不写
     if rom_stem and media_dir == rom_stem:
         return False
 
-    # 旧错误生成的 media/<中文游戏名>/ 三件套：
-    # 只有在它不是 ROM 父目录时才不写
+    # 单层 ROM：旧错误生成的 media/<中文游戏名>/ 三件套，不写
     if media_dir in _infer_noise_title_bases_from_game(game):
         return False
 
