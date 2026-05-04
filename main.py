@@ -2,11 +2,10 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-import os
 from pathlib import Path
 
 from Tools.export_to_json import export_platform_to_json
-from Utils.helpers import discover_platforms, auto_rom_root_from_meta
+from Utils.helpers import discover_platforms
 from Tools.base import verify_closure
 from Tools.json_to_metadata import json_to_metadata
 
