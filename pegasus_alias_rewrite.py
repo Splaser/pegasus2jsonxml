@@ -19,7 +19,7 @@ import shlex
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Iterable
-import shlex
+
 
 RA_ACTIVITY = "com.retroarch.aarch64/com.retroarch.browser.retroactivity.RetroActivityFuture"
 DEFAULT_CONFIG = "/storage/emulated/0/Android/data/com.retroarch.aarch64/files/retroarch.cfg"
@@ -343,7 +343,7 @@ def main() -> int:
 
     project_root = Path(__file__).resolve().parent
     input_dir = project_root / "jsondb"
-    out_dir = project_root / "jsondb_alias"
+    out_dir = project_root / "jsondb"
     report_path = project_root / "alias_report.json"
 
     if not input_dir.exists():
