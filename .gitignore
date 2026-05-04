@@ -12,3 +12,4 @@ Samples/
 
 __pycache__
 *.pyc
+*.csv
