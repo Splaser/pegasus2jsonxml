@@ -3,11 +3,14 @@ jsondb/
 CanonicalMetadata/
 Export_ESDE/
 Samples/
+_daijisho_probe/
 
 *.json
 *.jsonl
 *.xml
 *.txt
+*.db
+*.sql
 
 
 __pycache__
