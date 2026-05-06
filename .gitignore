@@ -4,6 +4,8 @@ CanonicalMetadata/
 Export_ESDE/
 Samples/
 _daijisho_probe/
+_esde_probe/
+
 
 *.json
 *.jsonl
