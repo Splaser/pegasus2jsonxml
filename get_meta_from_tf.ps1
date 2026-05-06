@@ -1,5 +1,5 @@
 $srcRoot = "F:\roms"
-$dstRoot = "E:\retro\pegasus2jsonxml\Resource"
+$dstRoot = ".\Resource"
 $report = @()
 
 Get-ChildItem -Path $srcRoot -Directory | ForEach-Object {
@@ -41,4 +41,4 @@ Get-ChildItem -Path $srcRoot -Directory | ForEach-Object {
     }
 }
 
-$report | Export-Csv "E:\retro\pegasus2jsonxml\metadata_sync_report.csv" -NoTypeInformation -Encoding UTF8
+$report | Export-Csv ".\metadata_sync_report.csv" -NoTypeInformation -Encoding UTF8
