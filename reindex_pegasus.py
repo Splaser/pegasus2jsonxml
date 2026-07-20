@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 
 
-ROM_ROOT = Path(r"G:\roms")
+ROM_ROOT = Path(r"f:\roms")
 
 # True：只显示改动，不真正写文件
 # 第一次运行建议保持 True，确认无误后改成 False
