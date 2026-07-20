@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import PurePosixPath
 from typing import Dict, List, Tuple, Optional, Any
 import shlex
 import os
@@ -415,23 +416,52 @@ def extract_libretro_core(launch_block: str) -> Optional[str]:
     return m.group(1)
 
 
-def _ensure_default_assets(game_dict):
+def _infer_default_media_base(game_dict: Dict) -> Optional[str]:
+    """
+    Infer the media directory from ROM paths, not from the display title.
+
+    Single-file entries use the ROM stem. Multi-file entries stored below a
+    common directory use that directory so that all discs share one asset set.
+    """
+    roms = game_dict.get("roms")
+    if isinstance(roms, list):
+        rom_paths = [r.strip() for r in roms if isinstance(r, str) and r.strip()]
+    else:
+        rom_paths = []
+
+    if not rom_paths:
+        file_name = game_dict.get("file")
+        if isinstance(file_name, str) and file_name.strip():
+            rom_paths = [file_name.strip()]
+
+    if not rom_paths:
+        return None
+
+    first_path = PurePosixPath(rom_paths[0].replace("\\", "/"))
+    if len(rom_paths) > 1 and len(first_path.parts) >= 2:
+        return first_path.parts[0]
+
+    return first_path.stem or first_path.name
+
+
+def _ensure_default_assets(game_dict: Dict) -> None:
     """
     确保每个 game 都有 assets 字段。
     如果 metadata 里没写 assets，就按照约定：
-        media/{game_name}/boxfront.png / logo.png / video.mp4
+        单文件：media/{rom_stem}/boxfront.png / logo.png / video.mp4
+        多文件：media/{first_rom_parent}/boxfront.png / logo.png / video.mp4
     自动补上。
     """
     # 已经有 assets，就不动
     if "assets" in game_dict and game_dict["assets"]:
         return
 
-    title = game_dict.get("game") or game_dict.get("title")
-    if not title:
+    media_base = _infer_default_media_base(game_dict)
+    if not media_base:
         return
 
     game_dict["assets"] = {
-        "box_front": f"media/{title}/boxfront.png",
-        "logo":      f"media/{title}/logo.png",
-        "video":     f"media/{title}/video.mp4",
+        "box_front": f"media/{media_base}/boxfront.png",
+        "logo":      f"media/{media_base}/logo.png",
+        "video":     f"media/{media_base}/video.mp4",
     }

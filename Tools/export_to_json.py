@@ -11,7 +11,7 @@ import os
 import json
 from pathlib import Path, PurePosixPath
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from .metadata_scanner import parse_pegasus_metadata, extract_libretro_core, normalize_launch_block
 from .rom_scanner import HEADER_BYTES, RomHasher
@@ -19,17 +19,31 @@ from .rom_scanner import HEADER_BYTES, RomHasher
 
 def _normalize_assets_media_dir(
     assets: Dict,
-    file_name: Optional[str]
+    file_name: Optional[str],
+    roms: Optional[List[str]] = None,
 ) -> Dict:
     """
-    把 assets 里的 media 目录统一改成 media/<file_stem>/xxx。
+    Normalize legacy numeric media directories.
+
+    Single-file entries use the ROM stem; multi-file entries below a common
+    directory use that parent directory.
     """
     if not isinstance(assets, dict) or not file_name:
         return assets
 
-    # 取文件名最后一段，再去掉扩展名：例如 "506.chd" -> "506"
-    fname = file_name.split("/")[-1]
-    stem = fname.rsplit(".", 1)[0] or fname
+    normalized_file = file_name.replace("\\", "/")
+    file_path = PurePosixPath(normalized_file)
+    media_base = file_path.stem or file_path.name
+
+    valid_roms = [
+        rom.replace("\\", "/").strip()
+        for rom in (roms or [])
+        if isinstance(rom, str) and rom.strip()
+    ]
+    if len(valid_roms) > 1:
+        first_path = PurePosixPath(valid_roms[0])
+        if len(first_path.parts) >= 2:
+            media_base = first_path.parts[0]
 
     new_assets: Dict = {}
     for k, v in assets.items():
@@ -42,11 +56,11 @@ def _normalize_assets_media_dir(
 
         # 只处理以 media 开头的路径：media/xxx/...
         if len(parts) >= 2 and parts[0] == "media":
-            # ✅ 只有当第二段是纯数字目录时，才执行“统一到 file_stem”
-            #    例如 media/001/boxfront.png → media/<stem>/boxfront.png
+            # 只有第二段是纯数字目录时才规范化：
+            # 单文件改到 ROM stem，多文件保留共同父目录。
             if len(parts) >= 3 and parts[1].isdigit():
                 rest = parts[2:]  # 去掉原来的第二段（数字目录）
-                new_p = PurePosixPath("media") / stem
+                new_p = PurePosixPath("media") / media_base
                 for comp in rest:
                     new_p /= comp
                 new_assets[k] = str(new_p)
@@ -89,7 +103,11 @@ def _build_game_json(
 
     if "assets" in game:
         raw_assets = game["assets"]
-        fixed_assets = _normalize_assets_media_dir(raw_assets, file_name)
+        fixed_assets = _normalize_assets_media_dir(
+            raw_assets,
+            file_name,
+            game.get("roms"),
+        )
         data["assets"] = fixed_assets
 
     # =====================================================
@@ -126,8 +144,8 @@ def _build_game_json(
 
     rom_hashes = []
     for rom_path in game.get("roms", []):
-        full_path = Path(rom_root) / rom_path
-        if full_path.is_file():
+        full_path = Path(rom_root) / rom_path if rom_root else None
+        if full_path is not None and full_path.is_file() and hasher is not None:
             size, sha256_full, md5_header = hasher.hash_rom(full_path)
             rom_hashes.append({
                 "rom_rel": rom_path,
