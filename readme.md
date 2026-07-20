@@ -55,6 +55,9 @@ python .\main.py all
 python .\main.py fbneo_act_hack
 ```
 
+导入时会自动完成 RetroArch Android core alias 清洗，不再需要额外执行
+`pegasus_alias_rewrite.py`。
+
 ---
 
 ### 2. jsondb → Canonical Pegasus metadata
@@ -93,7 +96,8 @@ snes9x_libretro_android.so             → snes9x
 fbneo_libretro_old_android             → fbneo
 ```
 
-运行：
+`main.py` 的新导入结果已经自动完成这一步。独立脚本保留用于修复已有
+JSONDB，或检查历史数据：
 
 ```powershell
 # dry-run，只看报告
@@ -284,6 +288,10 @@ multidisc 条目会显式写回 assets，避免前端推断错误。
 F:\roms\<平台>\metadata.pegasus.txt
 ```
 
+只会写入 TF 卡上已经存在、并且至少检测到一个实际 ROM 文件的平台目录。
+不存在的平台目录不会创建；空目录或只有 `media/metadata.pegasus.txt` 的目录会以
+`NO_ROMS_IN_TF_FOLDER` 跳过。
+
 由于项目 key 与 TF 卡目录名可能不同：
 
 ```text
@@ -318,7 +326,7 @@ TF_Metadata_Backup/<TF平台目录>/metadata.pegasus.YYYYMMDD_HHMMSS.bak.txt
 
 ## 推荐工作流
 
-### 保守流程：保留原始 jsondb，输出 jsondb_alias
+### 标准流程
 
 ```powershell
 # 1. Resource -> jsondb
@@ -327,30 +335,23 @@ python .\main.py
 # 2. 清理误伤游戏的 ignore-files
 python .\scan_ignore_files.py --json-root jsondb --apply
 
-# 3. core path -> RetroArch Android alias
-python .\pegasus_alias_rewrite.py --dry-run
-python .\pegasus_alias_rewrite.py
+# 3. jsondb -> CanonicalMetadata
+python .\main.py all --export-pegasus --out-root jsondb
 
-# 4. jsondb_alias -> CanonicalMetadata
-python .\main.py all --export-pegasus --out-root jsondb_alias
-
-# 5. dry-run 写回 TF
+# 4. dry-run 写回 TF
 python .\write_metadata_to_tf.py
 
-# 6. 实际写回 TF
+# 5. 实际写回 TF
 python .\write_metadata_to_tf.py --apply
 ```
 
-### 简化流程：直接覆盖 jsondb
+### 修复已有 JSONDB
 
-如果 `pegasus_alias_rewrite.py` 已配置为直接写回 `jsondb`：
+无需重新导入 Resource 时，可以单独检查并修复历史 JSON：
 
 ```powershell
-python .\main.py
-python .\scan_ignore_files.py --json-root jsondb --apply
+python .\pegasus_alias_rewrite.py --dry-run
 python .\pegasus_alias_rewrite.py
-python .\main.py all --export-pegasus --out-root jsondb
-python .\write_metadata_to_tf.py --apply
 ```
 
 ---

@@ -16,6 +16,29 @@ from typing import Dict, List, Tuple, Optional, Any
 import shlex
 import os
 
+KNOWN_TOP_LEVEL_KEYS = {
+    "collection",
+    "shortname",
+    "sort-by",
+    "launch",
+    "ignore-file",
+    "ignore-files",
+    "extension",
+    "extensions",
+    "game",
+    "file",
+    "files",
+    "developer",
+    "publisher",
+    "release",
+    "players",
+    "genre",
+    "genres",
+    "x-scrapername",
+    "description",
+}
+
+
 def normalize_launch_block(launch_block: str) -> Dict[str, Any]:
     """
     把一段 Pegasus launch 命令“正则化”，返回结构化信息：
@@ -218,13 +241,26 @@ def parse_pegasus_metadata(path: str) -> Tuple[Dict, List[Dict]]:
         current_key = None
         buf = []
 
-    with open(path, "r", encoding="utf-8") as f:
+    # utf-8-sig also accepts ordinary UTF-8 while removing an optional BOM.
+    with open(path, "r", encoding="utf-8-sig") as f:
         for raw_line in f:
             line = raw_line.rstrip("\n")
 
             # 跳过空行 / 纯注释行
             if not line.strip() or line.lstrip().startswith("#"):
                 continue
+
+            # 兼容未缩进的多行 description。只有已知 Pegasus 字段才结束
+            # description；诸如 "1. Arcade: ..." 的正文继续作为描述内容。
+            if current_key == "description" and not line.startswith((" ", "\t")):
+                candidate = line.partition(":")[0].strip() if ":" in line else ""
+                is_property = (
+                    candidate in KNOWN_TOP_LEVEL_KEYS
+                    or candidate.startswith("assets.")
+                )
+                if not is_property:
+                    buf.append(line)
+                    continue
 
             # 顶层 key（不缩进）
             if not line.startswith(" "):
@@ -360,7 +396,8 @@ def parse_pegasus_metadata(path: str) -> Tuple[Dict, List[Dict]]:
             else:
                 # 缩进行：多行属性的 continuation
                 if current_key is not None:
-                    buf.append(line.strip("\n"))
+                    # 缩进属于 Pegasus 多行语法，不属于字段内容。
+                    buf.append(line.lstrip())
                 else:
                     # 没有 current_key，当作 description 的一部分可能比较合理
                     # 但为了简单我们这里直接丢弃，或者你可以根据需要补逻辑

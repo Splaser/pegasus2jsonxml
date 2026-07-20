@@ -110,6 +110,29 @@ class DefaultAssetsTests(unittest.TestCase):
         self.assertEqual(exported["roms"], game["roms"])
         self.assertEqual(exported["assets"], game["assets"])
 
+    def test_bom_and_unindented_multiline_description_are_supported(self):
+        games = self.parse_games(
+            "\ufeffcollection: WS\n"
+            "\n"
+            "game: 上海\n"
+            "description: First paragraph.\n"
+            "Some variants are also included:\n"
+            "1. Kong Kong: Compete against a computer.\n"
+            "publisher: Sunsoft\n"
+            "players: 1-2\n"
+            "file: Shanghai.zip\n"
+        )
+
+        game = games[0]
+        self.assertEqual(
+            game["description"],
+            "First paragraph.\n"
+            "Some variants are also included:\n"
+            "1. Kong Kong: Compete against a computer.",
+        )
+        self.assertEqual(game["publisher"], "Sunsoft")
+        self.assertEqual(game["players"], "1-2")
+
 
 if __name__ == "__main__":
     unittest.main()

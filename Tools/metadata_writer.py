@@ -135,6 +135,10 @@ def _write_header(f: TextIO, header: Dict[str, Any]) -> None:
     if collection:
         f.write(f'collection: {collection}\n')
 
+    shortname = header.get("shortname")
+    if shortname:
+        f.write(f'shortname: {shortname}\n')
+
     default_sort_by = header.get("default_sort_by")
     if default_sort_by:
         f.write(f'sort-by: {default_sort_by}\n')
@@ -331,6 +335,18 @@ def _write_game(f: TextIO, game: Dict[str, Any]) -> None:
     developer = game.get("developer")
     if developer:
         f.write(f'developer: {developer}\n')
+
+    for json_key, pegasus_key in (
+        ("publisher", "publisher"),
+        ("release", "release"),
+        ("players", "players"),
+        ("genre", "genre"),
+        ("genres", "genres"),
+        ("x_scrapername", "x-scrapername"),
+    ):
+        value = game.get(json_key)
+        if value is not None:
+            f.write(f"{pegasus_key}: {value}\n")
 
     # assets.*
     _emit_assets_lines(f, game)

@@ -13,8 +13,19 @@ from pathlib import Path, PurePosixPath
 
 from typing import Dict, List, Optional
 
+from pegasus_alias_rewrite import rewrite_json_obj
+
 from .metadata_scanner import parse_pegasus_metadata, extract_libretro_core, normalize_launch_block
 from .rom_scanner import HEADER_BYTES, RomHasher
+
+GAME_PASSTHROUGH_FIELDS = (
+    "publisher",
+    "release",
+    "players",
+    "genre",
+    "genres",
+    "x_scrapername",
+)
 
 
 def _normalize_assets_media_dir(
@@ -101,6 +112,10 @@ def _build_game_json(
     if game.get("description"):
         data["description"] = game["description"]
 
+    for field in GAME_PASSTHROUGH_FIELDS:
+        if game.get(field) is not None:
+            data[field] = game[field]
+
     if "assets" in game:
         raw_assets = game["assets"]
         fixed_assets = _normalize_assets_media_dir(
@@ -176,6 +191,7 @@ def export_platform_to_json(
     meta_path: str,
     out_root: str = "jsondb",
     rom_root: str | None = None,
+    rewrite_aliases: bool = True,
 ) -> str:
     """
     读取 `meta_path`，生成 jsondb/{key}.json，返回输出文件路径。
@@ -203,6 +219,7 @@ def export_platform_to_json(
         "schema_version": 1,
         "platform": platform_name,
         "collection": header.get("collection") or platform_name,
+        "shortname": header.get("shortname"),
         "assets_base": "media",  # 新增：约定所有媒体路径都在 media/ 下
         "default_sort_by": header.get("default_sort_by"),
         "launch_block": header.get("launch_block"),
@@ -257,6 +274,11 @@ def export_platform_to_json(
         platform_type = plat_key_lower or (collection_lower or "unknown")
 
     payload["platform_type"] = platform_type
+
+    # Pegasus -> JSONDB 默认即完成 RetroArch Android core alias 清洗，
+    # 避免导入后还必须额外运行 pegasus_alias_rewrite.py 才得到规范数据。
+    if rewrite_aliases:
+        rewrite_json_obj(payload)
 
     # ------- 写盘 -------
     with open(out_path, "w", encoding="utf-8") as f:

@@ -89,6 +89,7 @@ def json_to_metadata(
 
     header: Dict[str, Any] = {
         "collection": payload.get("collection") or payload.get("platform_name") or key,
+        "shortname": payload.get("shortname"),
         "default_sort_by": payload.get("default_sort_by"),
         "launch_block": payload.get("launch_block"),
         "extensions": payload.get("extensions") or [],

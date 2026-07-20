@@ -6,9 +6,9 @@ into alias/core-id form, e.g.:
   /data/data/com.retroarch.aarch64/cores/snes9x_libretro_android.so -> snes9x
   /data/data/com.retroarch.aarch64/cores/mame_libretro_android.so   -> mamearcade
 
-Default behavior is conservative: preserve the existing launch_block structure and only
-replace the value after `-e LIBRETRO` / `--es LIBRETRO`, plus optionally quote ROM.
-Use --minimal to rebuild a clean Daijisho-like block with only ROM/LIBRETRO/CONFIGFILE.
+Behavior is conservative: preserve the existing launch_block structure and only
+replace the value after `-e LIBRETRO` / `--es LIBRETRO`, plus quote the ROM
+placeholder when needed.
 """
 from __future__ import annotations
 
@@ -190,18 +190,6 @@ def rewrite_token_list(tokens: list[Any]) -> tuple[list[Any], bool]:
             i += 3
             continue
 
-        if (
-            isinstance(out[i], str)
-            and out[i] in ("-e", "--es")
-            and i + 2 < len(out)
-            and out[i + 1] == "ROM"
-            and out[i + 2] == "{file.path}"
-        ):
-            out[i + 2] = '"{file.path}"'
-            changed = True
-            i += 3
-            continue
-
         i += 1
 
     return out, changed
@@ -243,16 +231,28 @@ def rewrite_launch_info(info: dict[str, Any]) -> tuple[bool, str | None, str | N
 
 def rewrite_game_overrides(game: dict[str, Any]) -> bool:
     changed = False
+    discovered_core: str | None = None
 
     if isinstance(game.get("launch_override"), str):
-        new_raw, _, _, ch = rewrite_launch_text(game["launch_override"])
+        new_raw, _, new_core, ch = rewrite_launch_text(game["launch_override"])
         if ch:
             game["launch_override"] = new_raw
             changed = True
+        discovered_core = new_core
 
     if isinstance(game.get("launch_info"), dict):
-        ch, _, _ = rewrite_launch_info(game["launch_info"])
+        info = game["launch_info"]
+        if isinstance(game.get("launch_override"), str) and info.get("raw") != game["launch_override"]:
+            info["raw"] = game["launch_override"]
+            changed = True
+
+        ch, _, new_core = rewrite_launch_info(info)
         if ch:
+            changed = True
+        discovered_core = discovered_core or new_core
+
+        if discovered_core and info.get("core") != discovered_core:
+            info["core"] = discovered_core
             changed = True
 
     if isinstance(game.get("core_override"), str):
@@ -261,6 +261,10 @@ def rewrite_game_overrides(game: dict[str, Any]) -> bool:
         if new != old:
             game["core_override"] = new
             changed = True
+        discovered_core = discovered_core or new
+    elif discovered_core:
+        game["core_override"] = discovered_core
+        changed = True
 
     return changed
 
@@ -292,8 +296,12 @@ def rewrite_json_obj(obj: dict[str, Any]) -> RewriteResult:
         info = obj["default_launch_info"]
 
         # Keep helper raw aligned with top-level launch_block when present.
-        if isinstance(obj.get("launch_block"), str):
+        if (
+            isinstance(obj.get("launch_block"), str)
+            and info.get("raw") != obj["launch_block"]
+        ):
             info["raw"] = obj["launch_block"]
+            changed = True
 
         ch, oc, nc = rewrite_launch_info(info)
         if ch:
@@ -308,8 +316,13 @@ def rewrite_json_obj(obj: dict[str, Any]) -> RewriteResult:
             except Exception:
                 pass
 
-        info["kind"] = info.get("kind") or "android_am"
-        info["emulator"] = info.get("emulator") or "retroarch"
+        if new_core or "com.retroarch" in str(info.get("raw") or "").lower():
+            if not info.get("kind"):
+                info["kind"] = "android_am"
+                changed = True
+            if not info.get("emulator"):
+                info["emulator"] = "retroarch"
+                changed = True
 
     # default_core
     if isinstance(obj.get("default_core"), str):
@@ -323,9 +336,13 @@ def rewrite_json_obj(obj: dict[str, Any]) -> RewriteResult:
 
     # If top-level LIBRETRO was found, keep default_core aligned.
     if new_core:
-        obj["default_core"] = new_core
+        if obj.get("default_core") != new_core:
+            obj["default_core"] = new_core
+            changed = True
         if isinstance(obj.get("default_launch_info"), dict):
-            obj["default_launch_info"]["core"] = new_core
+            if obj["default_launch_info"].get("core") != new_core:
+                obj["default_launch_info"]["core"] = new_core
+                changed = True
 
     # Per-game overrides
     game_overrides_changed = 0
