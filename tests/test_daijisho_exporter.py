@@ -1,7 +1,9 @@
 import json
+import io
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from contextlib import redirect_stdout
 from pathlib import Path
 
 from Converters.daijisho_exporter import export_daijisho
@@ -69,12 +71,7 @@ class DaijishoExporterTests(unittest.TestCase):
             self.assertEqual(game.findtext("releasedate"), "19960101T000000")
             self.assertEqual(game.findtext("image"), "./box/prikura.jpg")
 
-            report = json.loads(
-                (platform_dir / "export_report.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(report["metadata_count"], 1)
-            self.assertEqual(report["copied_count"], 1)
-            self.assertEqual(report["missing_count"], 0)
+            self.assertFalse((platform_dir / "export_report.json").exists())
 
     def test_nested_rom_uses_explicit_media_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -109,7 +106,7 @@ class DaijishoExporterTests(unittest.TestCase):
             game = ET.parse(platform_dir / "gamelist.xml").getroot()[0]
             self.assertEqual(game.findtext("path"), "./hack-folder/original.zip")
 
-    def test_reports_missing_and_does_not_overwrite_collision(self):
+    def test_logs_missing_and_does_not_overwrite_collision_or_export_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             resource = root / "Resource" / "Disc"
@@ -141,19 +138,26 @@ class DaijishoExporterTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            platform_dir = export_daijisho(
-                "disc", json_path, root / "Export_Daijisho", resource
+            out_dir = root / "Export_Daijisho"
+            platform_dir = out_dir / "disc"
+            platform_dir.mkdir(parents=True)
+            (out_dir / "disc.json").write_text("legacy", encoding="utf-8")
+            (platform_dir / "export_report.json").write_text(
+                "legacy", encoding="utf-8"
             )
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                platform_dir = export_daijisho(
+                    "disc", json_path, out_dir, resource
+                )
             self.assertEqual(
                 (platform_dir / "box" / "game.jpg").read_bytes(), b"first"
             )
-            report = json.loads(
-                (platform_dir / "export_report.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(report["metadata_count"], 3)
-            self.assertEqual(report["copied_count"], 1)
-            self.assertEqual(report["missing_count"], 1)
-            self.assertEqual(report["collision_count"], 1)
+            self.assertFalse((out_dir / "disc.json").exists())
+            self.assertFalse((platform_dir / "export_report.json").exists())
+            self.assertEqual(list(platform_dir.glob("*.json")), [])
+            self.assertIn("metadata=3, covers=1, missing=1, collisions=1", output.getvalue())
 
 
 if __name__ == "__main__":

@@ -546,7 +546,6 @@ Export_Daijisho/<platform>/
 ├── box/
 │   ├── prikura.jpg       # 对应 prikura.zip
 │   └── original.jpg      # 对应 subdir/original.zip
-└── export_report.json    # 已复制、缺图、重名冲突明细
 ```
 
 先让 Daijisho 扫描 ROM，然后进入对应平台的编辑页，分两步导入：
@@ -563,7 +562,8 @@ XML 使用 Daijisho 支持的 Skraper / EmulationStation `gamelist.xml` 格式�
 封面导出器会以 JSONDB 的 `assets.box_front` 为首选，同时兼容 Resource 中实际
 存在的 `boxFront.jpg`、`boxfront.jpg`、`cover.jpg`、PNG 等常见命名。目标图片
 沿用源格式，但 basename 一律改成 ROM basename；遇到两个子目录下 ROM 同名时
-不会静默覆盖，而会记录在 `export_report.json`。
+不会静默覆盖。已复制、缺图和重名冲突数量会显示在控制台；Daijisho 输出目录中
+只生成可导入的 `gamelist.xml` 和 `box/`，不再生成 JSON。
 
 默认封面源目录为 `F:\roms\<平台>\media`。平台目录名取自对应
 `metadata.pegasus.txt` 的父目录，因此本地 `Resource\MAME STG` 会映射到

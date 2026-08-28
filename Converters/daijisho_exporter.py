@@ -51,19 +51,26 @@ def export_daijisho(
     box_dir = platform_dir / "box"
     box_dir.mkdir(parents=True, exist_ok=True)
 
-    copied: list[dict[str, str]] = []
-    missing: list[dict[str, str]] = []
-    collisions: list[dict[str, str]] = []
+    # Older exporter versions wrote JSON beside/in the platform directory.
+    # Daijisho imports gamelist.xml only, so remove those generated leftovers.
+    for obsolete_json in (
+        out_dir / f"{platform}.json",
+        platform_dir / "export_report.json",
+    ):
+        if obsolete_json.is_file():
+            obsolete_json.unlink()
+
+    copied_count = 0
+    missing_count = 0
+    collision_count = 0
     destinations: dict[str, Path] = {}
     game_list = ET.Element("gameList")
 
     for game in games:
         rom_path = _primary_rom_path(game)
         if not rom_path:
-            missing.append({
-                "game": _game_name(game),
-                "reason": "NO_ROM_PATH",
-            })
+            missing_count += 1
+            print(f"[WARN] Daijisho 缺少 ROM 路径：{_game_name(game)}")
             continue
 
         rom_stem = PurePosixPath(rom_path.replace("\\", "/")).stem
@@ -71,39 +78,26 @@ def export_daijisho(
         source = _find_box_art(resource_dir, game, rom_path)
 
         if not rom_stem:
-            missing.append({
-                "game": _game_name(game),
-                "rom": rom_path,
-                "reason": "NO_ROM_STEM",
-            })
+            missing_count += 1
+            print(f"[WARN] Daijisho 无法取得 ROM 文件名：{rom_path}")
         elif source is None:
-            missing.append({
-                "game": _game_name(game),
-                "rom": rom_path,
-                "reason": "BOX_ART_NOT_FOUND",
-            })
+            missing_count += 1
+            print(f"[WARN] Daijisho 缺少封面：{_game_name(game)} ({rom_path})")
         else:
             destination = box_dir / f"{rom_stem}{source.suffix.lower()}"
             collision_key = destination.name.casefold()
             previous_source = destinations.get(collision_key)
             if previous_source is not None and previous_source != source:
-                collisions.append({
-                    "game": _game_name(game),
-                    "rom": rom_path,
-                    "destination": str(destination),
-                    "source": str(source),
-                    "conflicts_with": str(previous_source),
-                })
+                collision_count += 1
+                print(
+                    f"[WARN] Daijisho 封面重名，保留首个文件：{destination.name} "
+                    f"({previous_source} / {source})"
+                )
             else:
                 destinations[collision_key] = source
                 shutil.copy2(source, destination)
                 image_rel = f"./box/{destination.name}"
-                copied.append({
-                    "game": _game_name(game),
-                    "rom": rom_path,
-                    "source": str(source),
-                    "destination": str(destination),
-                })
+                copied_count += 1
 
         game_list.append(_game_to_xml(game, rom_path, image_rel))
 
@@ -115,29 +109,10 @@ def export_daijisho(
         xml_declaration=True,
     )
 
-    report_path = platform_dir / "export_report.json"
-    report = {
-        "platform": platform,
-        "resource_dir": str(resource_dir),
-        "gamelist": str(gamelist_path),
-        "box_dir": str(box_dir),
-        "metadata_count": len(game_list),
-        "copied_count": len(copied),
-        "missing_count": len(missing),
-        "collision_count": len(collisions),
-        "copied": copied,
-        "missing": missing,
-        "collisions": collisions,
-    }
-    report_path.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-
     print(
         f"[OK] Daijisho export -> {platform_dir} "
-        f"(metadata={len(game_list)}, covers={len(copied)}, "
-        f"missing={len(missing)}, collisions={len(collisions)})"
+        f"(metadata={len(game_list)}, covers={copied_count}, "
+        f"missing={missing_count}, collisions={collision_count})"
     )
     return platform_dir
 
