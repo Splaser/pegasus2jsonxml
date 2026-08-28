@@ -533,6 +533,9 @@ python .\main.py all --export-daijisho
 
 # 自定义输出目录
 python .\main.py all --export-daijisho --daijisho-out-root D:\DaijishoMedia
+
+# 资源不在默认的 F:\roms 时，指定实际 Pegasus ROM/media 根目录
+python .\main.py all --export-daijisho --daijisho-resource-root G:\roms
 ```
 
 输出结构：
@@ -561,6 +564,11 @@ XML 使用 Daijisho 支持的 Skraper / EmulationStation `gamelist.xml` 格式�
 存在的 `boxFront.jpg`、`boxfront.jpg`、`cover.jpg`、PNG 等常见命名。目标图片
 沿用源格式，但 basename 一律改成 ROM basename；遇到两个子目录下 ROM 同名时
 不会静默覆盖，而会记录在 `export_report.json`。
+
+默认封面源目录为 `F:\roms\<平台>\media`。平台目录名取自对应
+`metadata.pegasus.txt` 的父目录，因此本地 `Resource\MAME STG` 会映射到
+`F:\roms\MAME STG`。可通过 `--daijisho-resource-root` 改成其他 ROM 根目录；
+目标平台目录不存在时会警告并回退到本地 `Resource\<平台>`。
 
 Daijisho 平台模板 JSON 和数据库直写不属于这个导出：平台/Player 仍由 Daijisho
 自身管理，这里只处理可以稳定批量导入的文字元数据与媒体资源。

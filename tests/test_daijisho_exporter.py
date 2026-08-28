@@ -5,9 +5,22 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from Converters.daijisho_exporter import export_daijisho
+from main import daijisho_resource_dir
 
 
 class DaijishoExporterTests(unittest.TestCase):
+    def test_resolves_external_platform_media_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            metadata = root / "Resource" / "MAME STG" / "metadata.pegasus.txt"
+            external = root / "roms" / "MAME STG"
+            external.mkdir(parents=True)
+
+            self.assertEqual(
+                daijisho_resource_dir(str(metadata), str(root / "roms")),
+                external,
+            )
+
     def test_exports_metadata_and_rom_named_box(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

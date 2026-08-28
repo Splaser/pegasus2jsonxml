@@ -14,6 +14,23 @@ from Converters.esde_exporter import export_esde
 from Converters.retroarch_exporter import export_retroarch
 
 
+def daijisho_resource_dir(metadata_path: str, resource_root: str | None) -> Path:
+    """Resolve the real Pegasus platform directory used as Daijisho media source."""
+    local_platform_dir = Path(metadata_path).parent
+    if not resource_root:
+        return local_platform_dir
+
+    external_platform_dir = Path(resource_root) / local_platform_dir.name
+    if external_platform_dir.is_dir():
+        return external_platform_dir
+
+    print(
+        f"[WARN] Daijisho 资源目录不存在：{external_platform_dir}；"
+        f"回退到 {local_platform_dir}"
+    )
+    return local_platform_dir
+
+
 def main():
     parser = argparse.ArgumentParser(description="Pegasus metadata / jsondb 工具")
     parser.add_argument(
@@ -60,6 +77,11 @@ def main():
         "--daijisho-out-root",
         default="Export_Daijisho",
         help="Daijisho 输出根目录（默认 Export_Daijisho）",
+    )
+    parser.add_argument(
+        "--daijisho-resource-root",
+        default=r"F:\roms",
+        help=r"含各平台 ROM/media 的根目录（默认 F:\roms；平台目录名沿用 Resource）",
     )
     parser.add_argument(
         "--export-esde",
@@ -149,11 +171,15 @@ def main():
 
             if args.export_daijisho:
                 _, metadata_path = platforms[key]
+                resource_dir = daijisho_resource_dir(
+                    metadata_path,
+                    args.daijisho_resource_root,
+                )
                 export_daijisho(
                     key,
                     json_path,
                     Path(args.daijisho_out_root),
-                    resource_dir=Path(metadata_path).parent,
+                    resource_dir=resource_dir,
                 )
             if args.export_esde:
                 export_esde(key, json_path, Path("Export_ESDE"))
