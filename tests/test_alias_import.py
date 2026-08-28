@@ -74,6 +74,15 @@ class AliasImportTests(unittest.TestCase):
         self.assertEqual(game["launch_info"]["core"], "mame2003_plus")
         self.assertFalse(rewrite_json_obj(payload).changed)
 
+    def test_import_rewrites_nonworking_mame_libretro_alias(self):
+        payload = self.export("mame_libretro", "mame_libretro")
+
+        self.assertIn("-e LIBRETRO mamearcade", payload["launch_block"])
+        self.assertNotIn("-e LIBRETRO mame_libretro", payload["launch_block"])
+        self.assertEqual(payload["default_core"], "mamearcade")
+        self.assertEqual(payload["default_launch_info"]["core"], "mamearcade")
+        self.assertFalse(rewrite_json_obj(payload).changed)
+
 
 if __name__ == "__main__":
     unittest.main()

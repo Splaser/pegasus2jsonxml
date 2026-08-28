@@ -60,6 +60,10 @@ def core_to_alias(core: str | None) -> str | None:
 
     # Explicit known weird aliases / legacy values
     special = {
+        # RetroArch Android 1.22.2 accepts the frontend alias `mamearcade`.
+        # `mame_libretro` is accepted as an intent extra but leaves the app on
+        # a black screen instead of resolving/loading the MAME core.
+        "mame_libretro": "mamearcade",
         "mame_libretro_android.so": "mamearcade",
         "mame_libretro_android": "mamearcade",
         "mamearcade_libretro_android.so": "mamearcade",

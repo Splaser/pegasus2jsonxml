@@ -54,7 +54,12 @@ def main():
     parser.add_argument(
         "--export-daijisho",
         action="store_true",
-        help="从 jsondb 导出 Daijisho database JSON",
+        help="导出 Daijisho 可导入的 gamelist.xml 与同名 ROM 封面目录",
+    )
+    parser.add_argument(
+        "--daijisho-out-root",
+        default="Export_Daijisho",
+        help="Daijisho 输出根目录（默认 Export_Daijisho）",
     )
     parser.add_argument(
         "--export-esde",
@@ -143,7 +148,13 @@ def main():
                 return
 
             if args.export_daijisho:
-                export_daijisho(key, json_path, Path("Export_Daijisho"))
+                _, metadata_path = platforms[key]
+                export_daijisho(
+                    key,
+                    json_path,
+                    Path(args.daijisho_out_root),
+                    resource_dir=Path(metadata_path).parent,
+                )
             if args.export_esde:
                 export_esde(key, json_path, Path("Export_ESDE"))
             if args.export_ra:

@@ -521,12 +521,49 @@ mupen64plus_next_gles3
 ### Daijisho
 
 适合 Android 日用前端。  
-优势是启动快、界面简洁、切 core/player 方便。后续计划：
+优势是启动快、界面简洁、切 core/player 方便。当前支持同时导出游戏文字元数据
+和 Pegasus 封面资源：
+
+```powershell
+# 单个平台
+python .\main.py mame_stg --export-daijisho
+
+# 全部平台
+python .\main.py all --export-daijisho
+
+# 自定义输出目录
+python .\main.py all --export-daijisho --daijisho-out-root D:\DaijishoMedia
+```
+
+输出结构：
 
 ```text
-jsondb -> Daijisho import JSON
-jsondb -> Daijisho DB direct inject（root 后研究）
+Export_Daijisho/<platform>/
+├── gamelist.xml          # 名称、说明、厂商、类型、人数、发行日期等
+├── box/
+│   ├── prikura.jpg       # 对应 prikura.zip
+│   └── original.jpg      # 对应 subdir/original.zip
+└── export_report.json    # 已复制、缺图、重名冲突明细
 ```
+
+先让 Daijisho 扫描 ROM，然后进入对应平台的编辑页，分两步导入：
+
+```text
+Import Metadata / Import XML file -> 选择 gamelist.xml
+Import Preview Media -> Box Art -> 选择 box/
+```
+
+XML 使用 Daijisho 支持的 Skraper / EmulationStation `gamelist.xml` 格式。映射字段为
+`path`、`name`、`sortname`、`desc`、`developer`、`publisher`、`genre`、
+`players`、`releasedate`，并保留可兼容其他前端的 `image` 相对路径。
+
+封面导出器会以 JSONDB 的 `assets.box_front` 为首选，同时兼容 Resource 中实际
+存在的 `boxFront.jpg`、`boxfront.jpg`、`cover.jpg`、PNG 等常见命名。目标图片
+沿用源格式，但 basename 一律改成 ROM basename；遇到两个子目录下 ROM 同名时
+不会静默覆盖，而会记录在 `export_report.json`。
+
+Daijisho 平台模板 JSON 和数据库直写不属于这个导出：平台/Player 仍由 Daijisho
+自身管理，这里只处理可以稳定批量导入的文字元数据与媒体资源。
 
 ### RetroArch playlist
 
@@ -552,7 +589,7 @@ RA 自身 media 体系是 playlist label 对 thumbnail filename，不适合作�
   - 检查缺失 boxfront/logo/video
   - 报告默认 media 目录、嵌套 media 目录、显式 assets 是否存在
 - Daijisho exporter
-  - jsondb -> Daijisho import JSON
+  - 后续可按需要扩展 title/screenshot 资源目录
   - 后续研究 root 下 DB direct inject
 
 ### 中优先级

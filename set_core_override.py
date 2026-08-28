@@ -72,6 +72,7 @@ def core_to_alias(core: str | None) -> str | None:
     name = core.replace("\\", "/").split("/")[-1]
 
     special = {
+        "mame_libretro": "mamearcade",
         "mame_libretro_android.so": "mamearcade",
         "mame_libretro_android": "mamearcade",
         "mamearcade_libretro_android.so": "mamearcade",
