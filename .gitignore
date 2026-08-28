@@ -5,6 +5,7 @@ Export_ESDE/
 Samples/
 _daijisho_probe/
 _esde_probe/
+Export_Daijisho/
 
 
 *.json
