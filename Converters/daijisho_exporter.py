@@ -67,39 +67,43 @@ def export_daijisho(
     game_list = ET.Element("gameList")
 
     for game in games:
-        rom_path = _primary_rom_path(game)
-        if not rom_path:
+        rom_paths = _rom_paths(game)
+        if not rom_paths:
             missing_count += 1
             print(f"[WARN] Daijisho 缺少 ROM 路径：{_game_name(game)}")
             continue
 
-        rom_stem = PurePosixPath(rom_path.replace("\\", "/")).stem
-        image_rel: str | None = None
-        source = _find_box_art(resource_dir, game, rom_path)
+        # A Pegasus multidisc entry owns one media directory, while Daijisho
+        # scans every CHD/ISO/CUE as an individual playable item. Resolve the
+        # shared cover once, then emit one image and one XML item per ROM.
+        source = _find_box_art(resource_dir, game, rom_paths[0])
+        for rom_path in rom_paths:
+            rom_stem = PurePosixPath(rom_path).stem
+            image_rel: str | None = None
 
-        if not rom_stem:
-            missing_count += 1
-            print(f"[WARN] Daijisho 无法取得 ROM 文件名：{rom_path}")
-        elif source is None:
-            missing_count += 1
-            print(f"[WARN] Daijisho 缺少封面：{_game_name(game)} ({rom_path})")
-        else:
-            destination = box_dir / f"{rom_stem}{source.suffix.lower()}"
-            collision_key = destination.name.casefold()
-            previous_source = destinations.get(collision_key)
-            if previous_source is not None and previous_source != source:
-                collision_count += 1
-                print(
-                    f"[WARN] Daijisho 封面重名，保留首个文件：{destination.name} "
-                    f"({previous_source} / {source})"
-                )
+            if not rom_stem:
+                missing_count += 1
+                print(f"[WARN] Daijisho 无法取得 ROM 文件名：{rom_path}")
+            elif source is None:
+                missing_count += 1
+                print(f"[WARN] Daijisho 缺少封面：{_game_name(game)} ({rom_path})")
             else:
-                destinations[collision_key] = source
-                shutil.copy2(source, destination)
-                image_rel = f"./box/{destination.name}"
-                copied_count += 1
+                destination = box_dir / f"{rom_stem}{source.suffix.lower()}"
+                collision_key = destination.name.casefold()
+                previous_source = destinations.get(collision_key)
+                if previous_source is not None and previous_source != source:
+                    collision_count += 1
+                    print(
+                        f"[WARN] Daijisho 封面重名，保留首个文件：{destination.name} "
+                        f"({previous_source} / {source})"
+                    )
+                else:
+                    destinations[collision_key] = source
+                    shutil.copy2(source, destination)
+                    image_rel = f"./box/{destination.name}"
+                    copied_count += 1
 
-        game_list.append(_game_to_xml(game, rom_path, image_rel))
+            game_list.append(_game_to_xml(game, rom_path, image_rel))
 
     _indent_xml(game_list)
     gamelist_path = platform_dir / "gamelist.xml"
@@ -172,18 +176,26 @@ def _release_date(value: Any) -> str | None:
     return text
 
 
-def _primary_rom_path(game: dict[str, Any]) -> str | None:
-    value = game.get("file")
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-
+def _rom_paths(game: dict[str, Any]) -> list[str]:
+    """Return every Daijisho-scannable path for a Pegasus game, in order."""
+    candidates: list[Any] = [game.get("file")]
     for key in ("roms", "files"):
         values = game.get(key)
         if isinstance(values, list):
-            for candidate in values:
-                if isinstance(candidate, str) and candidate.strip():
-                    return candidate.strip()
-    return None
+            candidates.extend(values)
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not isinstance(candidate, str) or not candidate.strip():
+            continue
+        normalized = candidate.strip().replace("\\", "/")
+        key = normalized.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(normalized)
+    return result
 
 
 def _game_name(game: dict[str, Any]) -> str:

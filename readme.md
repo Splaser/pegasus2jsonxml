@@ -565,6 +565,20 @@ XML 使用 Daijisho 支持的 Skraper / EmulationStation `gamelist.xml` 格式�
 不会静默覆盖。已复制、缺图和重名冲突数量会显示在控制台；Daijisho 输出目录中
 只生成可导入的 `gamelist.xml` 和 `box/`，不再生成 JSON。
 
+多盘游戏会展开 `file`、`roms`、`files` 中的全部路径并去重。每张 CHD/ISO/CUE
+都会得到一份同名封面，`gamelist.xml` 也会为每张盘重复写入该游戏的名称、说明
+和其他文字元数据。例如：
+
+```text
+roms:
+  Xenogears (Disc 1).chd
+  Xenogears (Disc 2).chd
+
+box:
+  Xenogears (Disc 1).jpg
+  Xenogears (Disc 2).jpg
+```
+
 默认封面源目录为 `F:\roms\<平台>\media`。平台目录名取自对应
 `metadata.pegasus.txt` 的父目录，因此本地 `Resource\MAME STG` 会映射到
 `F:\roms\MAME STG`。可通过 `--daijisho-resource-root` 改成其他 ROM 根目录；

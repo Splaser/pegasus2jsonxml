@@ -106,6 +106,66 @@ class DaijishoExporterTests(unittest.TestCase):
             game = ET.parse(platform_dir / "gamelist.xml").getroot()[0]
             self.assertEqual(game.findtext("path"), "./hack-folder/original.zip")
 
+    def test_multidisc_game_repeats_cover_and_metadata_for_every_rom(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            resource = root / "Resource" / "PS1"
+            source = resource / "media" / "Xenogears" / "boxFront.jpg"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"shared-cover")
+
+            json_path = root / "jsondb" / "ps1.json"
+            json_path.parent.mkdir()
+            json_path.write_text(
+                json.dumps({
+                    "games": [{
+                        "game": "异度装甲 汉化版",
+                        "file": "Xenogears/Xenogears (Disc 1).chd",
+                        "roms": [
+                            "Xenogears/Xenogears (Disc 1).chd",
+                            "Xenogears/Xenogears (Disc 2).chd",
+                        ],
+                        "description": "两张盘共用的说明",
+                        "assets": {
+                            "box_front": "media/Xenogears/boxfront.png"
+                        },
+                    }]
+                }),
+                encoding="utf-8",
+            )
+
+            platform_dir = export_daijisho(
+                "ps1", json_path, root / "Export_Daijisho", resource
+            )
+
+            for disc in (1, 2):
+                self.assertEqual(
+                    (
+                        platform_dir
+                        / "box"
+                        / f"Xenogears (Disc {disc}).jpg"
+                    ).read_bytes(),
+                    b"shared-cover",
+                )
+
+            games = ET.parse(platform_dir / "gamelist.xml").getroot()
+            self.assertEqual(len(games), 2)
+            self.assertEqual(
+                [game.findtext("path") for game in games],
+                [
+                    "./Xenogears/Xenogears (Disc 1).chd",
+                    "./Xenogears/Xenogears (Disc 2).chd",
+                ],
+            )
+            self.assertEqual(
+                [game.findtext("name") for game in games],
+                ["异度装甲 汉化版", "异度装甲 汉化版"],
+            )
+            self.assertEqual(
+                [game.findtext("desc") for game in games],
+                ["两张盘共用的说明", "两张盘共用的说明"],
+            )
+
     def test_logs_missing_and_does_not_overwrite_collision_or_export_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
