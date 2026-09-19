@@ -32,9 +32,9 @@ def chd_sort_key(k: str):
     return (num, kind, lk)
 
 def main():
-    base_dir = Path(__file__).parent
-    raw_path = base_dir / "ps2_raw_mapping.json"
-    out_path = base_dir / "ps2_mapping_redump.json"
+    data_dir = Path(__file__).resolve().parent.parent / "data"
+    raw_path = data_dir / "ps2_raw_mapping.json"
+    out_path = data_dir / "ps2_mapping_redump.json"
 
     if not raw_path.is_file():
         raise SystemExit(f"找不到 ps2_raw_mapping.json: {raw_path}")

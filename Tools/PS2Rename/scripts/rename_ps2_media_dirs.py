@@ -43,9 +43,6 @@ def rename_media_dirs(media_root: Path, mapping: Dict[str, str]) -> None:
 
 
 if __name__ == "__main__":
-    base_dir = Path(__file__).resolve().parent      # PS2Rename 目录
-    proj_root = base_dir.parent.parent
-
     media_root = Path("G:/roms/PS2/media")          # ← 把这里改成你 TF 卡上的 PS2 media 路径
 
     mp = load_name_mapping()

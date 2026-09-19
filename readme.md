@@ -412,9 +412,14 @@ PEGASUS2JSONXML/
 ├── TF_Metadata_Backup/           # 写回 TF 前的旧 metadata 备份
 │
 ├── Tools/
+│   ├── README.md                 # 工具分类与入口说明
 │   ├── export_to_json.py         # Pegasus metadata -> jsondb
 │   ├── json_to_metadata.py       # jsondb -> CanonicalMetadata
 │   ├── metadata_writer.py        # metadata 写回规则
+│   ├── PS2Rename/                # PS2 映射/重命名工具
+│   │   ├── scripts/
+│   │   ├── data/              # 本地映射，Git 忽略
+│   │   └── docs/              # 本地说明，Git 忽略
 │   └── ...
 │
 ├── Converters/                   # 其他前端导出器，实验/扩展用

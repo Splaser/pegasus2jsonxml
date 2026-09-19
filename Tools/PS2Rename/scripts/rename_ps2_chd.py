@@ -1,8 +1,9 @@
 from pathlib import Path
+import argparse
 import json
 
-HERE = Path(__file__).resolve().parent
-MAPPING_JSON = HERE / "ps2_mapping_redump.json"  # { "001.chd": {cn, en}, ... }
+TOOL_DIR = Path(__file__).resolve().parent.parent
+MAPPING_JSON = TOOL_DIR / "data" / "ps2_mapping_redump.json"  # { "001.chd": {cn, en}, ... }
 
 CHD_DIRS = [
     Path(r"\\192.168.5.146\nexnasshare\tkzlm\【3】天马rom资源\【13】PS2--1077G\【汉化版，放入PS2文件夹】--276GB\PS2"),
@@ -105,5 +106,11 @@ def rename_chd_files(dry_run: bool = True) -> None:
 
 
 if __name__ == "__main__":
-    # 强烈建议你第一次先 dry_run=True 看一遍输出
-    rename_chd_files(dry_run=False)
+    parser = argparse.ArgumentParser(description="根据 PS2 Redump 映射重命名 CHD 文件")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="实际重命名；默认只预览计划",
+    )
+    args = parser.parse_args()
+    rename_chd_files(dry_run=not args.apply)

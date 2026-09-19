@@ -129,8 +129,8 @@ def apply_to_jsondb(jsondb_path: Path, mapping: dict[str, str]) -> None:
 
 
 if __name__ == "__main__":
-    base_dir = Path(__file__).resolve().parent          # PS2Rename
-    proj_root = base_dir.parent.parent                  # 项目根
+    script_dir = Path(__file__).resolve().parent
+    proj_root = script_dir.parent.parent.parent         # 项目根
     jsondb_ps2 = proj_root / "jsondb" / "ps2.json"
     # jsondb_ps2_hack = proj_root / "jsondb" / "ps2_hack.json"
 

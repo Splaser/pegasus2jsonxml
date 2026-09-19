@@ -68,12 +68,15 @@ def parse_mapping_from_txt(txt_path: Path) -> dict[str, str]:
 
 
 def main():
-    base_dir = Path(__file__).parent
+    tool_dir = Path(__file__).resolve().parent.parent
+    docs_dir = tool_dir / "docs"
+    data_dir = tool_dir / "data"
     txt_paths = [
-        base_dir / "PS2 汉化版说明.txt",
-        base_dir / "PS2 非汉化说明.txt",
+        docs_dir / "PS2 汉化版说明.txt",
+        docs_dir / "PS2 非汉化说明.txt",
     ]
-    out_path = base_dir / "ps2_raw_mapping.json"
+    out_path = data_dir / "ps2_raw_mapping.json"
+    data_dir.mkdir(parents=True, exist_ok=True)
 
     merged: dict[str, str] = {}
     total = 0
